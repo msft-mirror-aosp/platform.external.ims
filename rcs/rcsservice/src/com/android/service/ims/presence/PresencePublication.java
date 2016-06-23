@@ -209,8 +209,6 @@ public class PresencePublication extends PresenceBase {
                                      String[] myImpu = teleMgr.getIsimImpu();
                                      String myDomain = teleMgr.getIsimDomain();
                                      String line1Number = teleMgr.getLine1Number();
-                                     logger.debug("myImpu=" + myImpu + " myDomain=" + myDomain +
-                                              " line1Number=" + line1Number);
                                      if(line1Number != null && line1Number.length() != 0 ||
                                          myImpu != null && myImpu.length != 0 &&
                                          myDomain != null && myDomain.length() != 0){

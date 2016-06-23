@@ -165,7 +165,7 @@ public class PollingTask {
                     .setLastUpdatedTimeStamp(current);
             int result = contactManager.update(request);
             if (result <= 0) {
-                logger.debug("failed to update timestamp for contact: " + number);
+                logger.debug("failed to update timestamp for contact: ");
             }
         }
     }

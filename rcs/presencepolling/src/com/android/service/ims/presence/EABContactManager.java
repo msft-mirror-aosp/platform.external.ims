@@ -135,7 +135,7 @@ public class EABContactManager {
         public Request(String number) {
             if (TextUtils.isEmpty(number)) {
                 throw new IllegalArgumentException(
-                        "Can't update EAB presence item with number: " + number);
+                        "Can't update EAB presence item with");
             }
 
             mContactNumber = number;
@@ -706,7 +706,6 @@ public class EABContactManager {
                         null, null);
             }
 
-            logger.debug("Update contact " + number + " with request: " + values);
             return mResolver.update(mBaseUri, values, getWhereClauseForIds(ids),
                     getWhereArgsForIds(ids));
         }
