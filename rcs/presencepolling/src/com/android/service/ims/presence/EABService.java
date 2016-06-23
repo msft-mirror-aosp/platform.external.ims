@@ -486,9 +486,6 @@ EAB_RESET_CONTENT_OBSERVERS));
                             ContactsContract.Data.DATA1));
                     String displayName = cursor.getString(cursor.getColumnIndex(
                            ContactsContract.Data.DISPLAY_NAME));
-                    logger.debug("dataId : " + dataId + " rawContactId :"  + rawContactId +
-                           " contactId : " + contactId
-                           + " phoneNumber :" + phoneNumber + " displayName :" + displayName);
                     verifyInsertOrUpdateAction(dataId, contactId, rawContactId, phoneNumber,
                           displayName);
                     if (uniqueRawContactIds.isEmpty()) {
@@ -522,7 +519,6 @@ EAB_RESET_CONTENT_OBSERVERS));
 
     private void verifyInsertOrUpdateAction(Long dataId, Long contactId,
             Long rawContactId, String phoneNumber, String displayName) {
-        logger.debug("Enter: verifyInsertOrUpdateAction() phoneNumber : " + phoneNumber);
         if (null == phoneNumber){
             logger.error("Error: return as phoneNumber is null");
             return;
@@ -549,8 +545,6 @@ EAB_RESET_CONTENT_OBSERVERS));
                                     .getColumnIndex(EABContract.EABColumns.CONTACT_NUMBER));
                     String eabDisplayName = eabCursor.getString(eabCursor
                             .getColumnIndex(EABContract.EABColumns.CONTACT_NAME));
-                    logger.debug("phoneNumber : " + phoneNumber
-                            + " eabPhoneNumber :" + eabPhoneNumber);
                     // Contact names should match and both numbers should not be
                     // null & should not match.
                     if ((null != eabPhoneNumber)
@@ -659,7 +653,6 @@ EAB_RESET_CONTENT_OBSERVERS));
                         while (eabDbCursor.moveToNext()) {
                             String eabPhoneNumber = eabDbCursor.getString(eabDbCursor
                                     .getColumnIndex(EABContract.EABColumns.CONTACT_NUMBER));
-                            logger.debug("eabPhoneNumber :" + eabPhoneNumber);
                             Long eabDataId = Long.valueOf(eabDbCursor.getLong(eabDbCursor
                                     .getColumnIndex(EABContract.EABColumns.DATA_ID)));
                             logger.debug("eabDataId :" + eabDataId);
@@ -669,8 +662,8 @@ EAB_RESET_CONTENT_OBSERVERS));
                                 eabDataIdList.add(eabDataId);
                             } else {
                                 // Something is wrong. There can not be duplicate numbers.
-                                logger.error("Duplicate entry for PhoneNumber :" + eabPhoneNumber
-                                        + " with DataId : " + eabDataId + " found in EABProvider.");
+                                logger.error("Duplicate entry for DataId : " + eabDataId +
+                                    " found in EABProvider.");
                             }
                         }
                         logger.debug("Before computation eabDataIdList size :" +
@@ -681,15 +674,12 @@ EAB_RESET_CONTENT_OBSERVERS));
                             Long contactDataId = Long.valueOf(contactDbCursor.getLong(
                                     contactDbCursor
                                             .getColumnIndex(ContactsContract.Data._ID)));
-                            logger.debug("contactPhoneNumber : " + contactPhoneNumber +
-                                    " dataId : " + contactDataId);
                             if (eabDataIdList.contains(contactDataId) )  {
                                 eabDataIdList.remove(contactDataId);
                                 logger.debug("Number removed from eabDataIdList");
                             } else {
                                 // Something is wrong. There can not be new number in Contacts DB.
-                                logger.error("Number :" + contactPhoneNumber
-                                        + " with DataId : " + contactDataId +
+                                logger.error("DataId " + contactDataId +
                                         " not found in EABProvider.");
                             }
                         }
@@ -805,11 +795,6 @@ EAB_RESET_CONTENT_OBSERVERS));
                             ContactsContract.Contacts.Entity.DATA1));
                     String profileName = cursor.getString(cursor.getColumnIndex(
                             ContactsContract.Contacts.Entity.DISPLAY_NAME));
-                    logger.debug("Profile Name : " + profileName
-                            + " Profile Number : " + contactNumber
-                            + " profile dataId : " + dataId
-                            + " profile rawContactId : " + rawContactId
-                            + " profile contactId : " + contactId);
                     if (profileDataIdList.isEmpty()) {
                         profileDataIdList.add(dataId);
                         profileNumberList.clear();
@@ -819,8 +804,7 @@ EAB_RESET_CONTENT_OBSERVERS));
                         profileNumberList.add(contactNumber);
                     } else {
                         // There are duplicate entries in Profile's Table
-                        logger.error("Duplicate entry in Profile's Table for contact :" +
-                                contactNumber + " dataId : " + dataId);
+                        logger.error("Duplicate entry in Profile's Table for dataId : " + dataId);
                     }
                     verifyInsertOrUpdateAction(dataId, contactId, rawContactId, contactNumber,
                             profileName);
@@ -960,10 +944,6 @@ EAB_RESET_CONTENT_OBSERVERS));
     private void handlePhoneNumberInsertion(Long dataId, Long contactId,
             Long rawContactId, String phoneNumber, String contactName) {
 
-        logger.debug("handlePhoneNumberInsertion() rawContactId : "
-                + rawContactId + " dataId :" + dataId + " contactId :"
-                + contactId + " phoneNumber :" + phoneNumber + " contactName :"
-                + contactName);
         if (!EABDbUtil.validateEligibleContact(mContext, phoneNumber)) {
             logger.debug("Return as number is not elegible for VT.");
             return;
@@ -991,11 +971,6 @@ EAB_RESET_CONTENT_OBSERVERS));
     private void handlePhoneNumberChanged(Long dataId, Long contactId,
             Long rawContactId, String oldPhoneNumber, String newPhoneNumber,
             String contactName) {
-
-        logger.debug("handlePhoneNumberChanged() rawContactId : " + rawContactId
-                + " dataId :" + dataId + " oldPhoneNumber :" + oldPhoneNumber
-                + " newPhoneNumber :" + newPhoneNumber + " contactName :"
-                + contactName);
 
         if (null == oldPhoneNumber && null == newPhoneNumber) {
             logger.debug("Both old and new numbers are null.");
@@ -1055,8 +1030,6 @@ EAB_RESET_CONTENT_OBSERVERS));
 
     private void handlePhoneNameUpdate(Long dataId, Long contactId,
             Long rawContactId, String phoneNumber, String newDisplayName) {
-        logger.debug("handlePhoneNameUpdate() rawContactId : " + rawContactId
-                + " dataId :" + dataId + " newDisplayName :" + newDisplayName);
         String sRawContactId = null;
         String sDataId = null;
         String sContactId = null;

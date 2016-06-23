@@ -377,8 +377,6 @@ public class EABProvider extends DatabaseContentProvider{
         Cursor cursor = getContext().getContentResolver().query(EABContract.EABColumns.CONTENT_URI,
                         projection, whereClause, selectionArgs, null);
         if ((null != cursor) && (cursor.getCount() > 0)) {
-            logger.debug("Number : " + phoneNumber +
-                    " is already stored in EAB DB - cursor count is " + cursor.getCount());
             logger.error("Inserting another copy of MDN to EAB DB.");
             // Update data only from first cursor element.
             cursor.moveToNext();
@@ -439,9 +437,6 @@ public class EABProvider extends DatabaseContentProvider{
                         EABContract.EABColumns.CONTACT_NUMBER));
                 String displayName = cursor.getString(cursor.getColumnIndex(
                         EABContract.EABColumns.CONTACT_NAME));
-                logger.debug("Deleting : dataId : " + dataId + " contactId :"  + contactId +
-                        " rawContactId :" + rawContactId + " phoneNumber :" + phoneNumber +
-                        " displayName :" + displayName);
             }
         } else {
             logger.error("cursor is null!");

@@ -223,7 +223,6 @@ public class RcsService extends Service{
          * @hide
          */
         public int requestAvailability(String contactNumber, IRcsPresenceListener listener){
-            logger.debug("calling requestAvailability, contactNumber=" + contactNumber);
             if(mSubscriber == null){
                 logger.error("requestAvailability, mPresenceSubscriber is null");
                 return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
@@ -246,7 +245,6 @@ public class RcsService extends Service{
          */
         public int requestAvailabilityNoThrottle(String contactNumber,
                 IRcsPresenceListener listener) {
-            logger.debug("calling requestAvailabilityNoThrottle, contactNumber=" + contactNumber);
             if(mSubscriber == null){
                 logger.error("requestAvailabilityNoThrottle, mPresenceSubscriber is null");
                 return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;

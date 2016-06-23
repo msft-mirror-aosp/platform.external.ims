@@ -271,7 +271,6 @@ public class PresenceInfoParser{
             return number = number.substring(startIndex + 1);
         }
 
-        logger.debug("number=" + number);
         return number;
     }
 }
