@@ -385,7 +385,6 @@ public class CapabilityPolling {
     }
 
     private void newContactAdded(String number) {
-        logger.print("Enter newContactAdded: " + number);
         if (TextUtils.isEmpty(number)) {
             return;
         }

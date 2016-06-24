@@ -191,7 +191,6 @@ public class TaskManager{
     }
 
     public void onTerminated(String contact){ // for single number capability polling
-        logger.debug("onTerminated contact=" + contact);
         if(contact == null){
             return;
         }
@@ -379,15 +378,12 @@ public class TaskManager{
                 if(task instanceof PresenceAvailabilityTask){
                     PresenceAvailabilityTask availabilityTask = (PresenceAvailabilityTask)task;
                     if(PhoneNumberUtils.compare(contact, availabilityTask.mContacts[0])){
-                        logger.debug("getTaskByContact contact=" + contact +
-                                " task=" + availabilityTask);
                         return availabilityTask;
                     }
                 }
             }
         }
 
-        logger.debug("getTaskByContact, contact=" + contact + " task=null");
         return null;
     }
 }

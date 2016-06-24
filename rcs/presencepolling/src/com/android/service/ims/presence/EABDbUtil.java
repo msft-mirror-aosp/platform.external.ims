@@ -114,10 +114,6 @@ public class EABDbUtil {
                             if (null != dataId) {
                                 allEligibleContacts.add(new PresenceContact(contactName,
                                         contactNumber, rawContactId, contactId, dataId));
-                                logger.debug("Eligible List Name: " + contactName +
-                                        " Number:" + contactNumber +
-                                        " RawContactID: " + rawContactId +
-                                        " contactId: " + contactId + " Data.ID : " + dataId);
                             } else {
                                 logger.debug("dataId is null. Don't add contact to " +
                                         "allEligibleContacts.");
@@ -399,7 +395,6 @@ public class EABDbUtil {
         if ( ContactNumberUtils.NUMBER_VALID == numberType) {
             number = true;
         }
-        logger.debug("Exiting validateEligibleContact with value : " + number);
         return number;
     }
 
@@ -422,7 +417,6 @@ public class EABDbUtil {
                 number = mdnFormatted[0];
             }
         }
-        logger.debug("After filterEligibleContact validation / formatting : " + number);
         return number;
     }
 }
