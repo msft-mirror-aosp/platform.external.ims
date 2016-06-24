@@ -43,6 +43,7 @@
     <protected-broadcast android:name="com.android.ims.ACTION_PRESENCE_CHANGED" />
     <protected-broadcast android:name="com.android.ims.ACTION_PUBLISH_STATUS_CHANGED" />
     <protected-broadcast android:name="com.android.service.ims.presence.retry" />
+    <protected-broadcast android:name="com.android.service.ims.presence.task.timeout" />
 
     <permission
         android:name="com.android.ims.rcs.permission.STATUS_CHANGED"
