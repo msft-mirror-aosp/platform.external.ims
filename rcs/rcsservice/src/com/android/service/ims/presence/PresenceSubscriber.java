@@ -124,7 +124,6 @@ public class PresenceSubscriber extends PresenceBase{
 
     public int requestCapability(List<String> contactsNumber,
             IRcsPresenceListener listener){
-        logger.debug("requestCapability contactsNumber=" + contactsNumber);
 
         int ret = mRcsStackAdaptor.checkStackAndPublish();
         if(ret < ResultCode.SUCCESS){
@@ -184,8 +183,6 @@ public class PresenceSubscriber extends PresenceBase{
 
     public int requestAvailability(String contactNumber, IRcsPresenceListener listener,
             boolean forceToNetwork){
-        logger.print("requestAvailability contactNumber=" + contactNumber +
-                " forceToNetwork=" + forceToNetwork);
 
         String formatedContact = ContactNumberUtils.getDefault().format(contactNumber);
         int ret = ContactNumberUtils.getDefault().validate(formatedContact);
@@ -420,7 +417,6 @@ public class PresenceSubscriber extends PresenceBase{
             ArrayList<RcsPresenceInfo> presenceInfoList = new ArrayList<RcsPresenceInfo>();
 
             for(int i=0; i<contacts.length; i++){
-                logger.debug("404 error: task.mContacts[" + i + "]=" + contacts[i]);
                 if(TextUtils.isEmpty(contacts[i])){
                     continue;
                 }
@@ -454,7 +450,6 @@ public class PresenceSubscriber extends PresenceBase{
     }
 
     public void retryToGetAvailability() {
-        logger.debug("retryToGetAvailability, number=" + mAvailabilityRetryNumber);
         if(mAvailabilityRetryNumber == null){
             return;
         }
