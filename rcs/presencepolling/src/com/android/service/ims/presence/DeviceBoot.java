@@ -31,7 +31,6 @@ package com.android.service.ims.presence;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.os.SystemProperties;
 
 import com.android.ims.RcsPresence;
 import com.android.ims.RcsPresence.PublishState;
@@ -63,13 +62,11 @@ public class DeviceBoot extends BroadcastReceiver {
             logger.debug("Publish state: " + state);
         }
 
-        String rcsSupported = SystemProperties.get("persist.rcs.supported");
-        logger.info("persist.rcs.supported: " + rcsSupported);
-        if (! "1".equals(rcsSupported)) {
+        if (!PollingService.isRcsSupported(context)) {
             return;
         }
 
-        if (! sServiceStarted) {
+        if (!sServiceStarted) {
             sServiceStarted = LauncherUtils.launchPollingService(context);
         }
 
