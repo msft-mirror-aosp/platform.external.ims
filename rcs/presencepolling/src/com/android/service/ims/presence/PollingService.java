@@ -29,9 +29,12 @@
 package com.android.service.ims.presence;
 
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.telephony.CarrierConfigManager;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.PersistableBundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
@@ -57,7 +60,7 @@ public class PollingService extends Service {
     public void onCreate() {
         logger.debug("onCreate()");
 
-        if (isEabSupported()) {
+        if (isEabSupported(this)) {
             mCapabilityPolling = CapabilityPolling.getInstance(this);
             mCapabilityPolling.start();
         }
@@ -68,7 +71,7 @@ public class PollingService extends Service {
         logger.debug("onStartCommand(), intent: " + intent +
                 ", flags: " + flags + ", startId: " + startId);
 
-        if (!isRcsSupported()) {
+        if (!isRcsSupported(this)) {
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -95,7 +98,7 @@ public class PollingService extends Service {
     public IBinder onBind(Intent intent) {
         logger.debug("onBind(), intent: " + intent);
 
-        if (!isRcsSupported()) {
+        if (!isRcsSupported(this)) {
             return null;
         }
 
@@ -103,16 +106,32 @@ public class PollingService extends Service {
         return null;
     }
 
-    private boolean isRcsSupported() {
+    static boolean isRcsSupported(Context context) {
+        return isRcsSupportedByDevice() && isRcsSupportedByCarrier(context);
+    }
+
+    private static boolean isEabSupported(Context context) {
+        return isEabSupportedByDevice() && isRcsSupportedByCarrier(context);
+    }
+
+    private static boolean isRcsSupportedByCarrier(Context context) {
+        CarrierConfigManager configManager = context.getSystemService(CarrierConfigManager.class);
+        if (configManager != null) {
+            PersistableBundle b = configManager.getConfig();
+            if (b != null) {
+                return b.getBoolean(CarrierConfigManager.KEY_USE_RCS_PRESENCE_BOOL, false);
+            }
+        }
+        return true;
+    }
+
+    private static boolean isRcsSupportedByDevice() {
         String rcsSupported = SystemProperties.get("persist.rcs.supported");
-        logger.info("persist.rcs.supported: " + rcsSupported);
         return "1".equals(rcsSupported);
     }
 
-    private boolean isEabSupported() {
+    private static boolean isEabSupportedByDevice() {
         String eabSupported = SystemProperties.get("persist.eab.supported");
-        logger.info("persist.eab.supported: " + eabSupported);
         return ("0".equals(eabSupported)) ? false : true;
     }
 }
-
