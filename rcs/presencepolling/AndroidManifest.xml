@@ -35,6 +35,7 @@
 
     <uses-sdk android:minSdkVersion="19"/>
 
+    <protected-broadcast android:name="android.provider.rcs.eab.ACTION_EAB_RESET_CONTENT_OBSERVERS" />
     <protected-broadcast android:name="android.provider.rcs.eab.EAB_NEW_CONTACT_INSERTED" />
     <protected-broadcast android:name="com.android.service.ims.presence.capability_polling_retry" />
     <protected-broadcast android:name="com.android.service.ims.presence.periodical_capability_discovery" />
