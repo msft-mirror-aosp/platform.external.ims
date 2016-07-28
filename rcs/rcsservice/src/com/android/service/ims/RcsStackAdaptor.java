@@ -124,13 +124,16 @@ public class RcsStackAdaptor{
     private static final int MAX_RETRY_COUNT = 6;//Maximum time is 64s
 
     public boolean isImsEnableState() {
-        return mImsEnableState;
+        synchronized (mSyncObj) {
+            return mImsEnableState;
+        }
     }
 
-    synchronized public void setImsEnableState(boolean imsEnableState) {
-        logger.debug("imsEnableState=" + imsEnableState);
-
-        mImsEnableState = imsEnableState;
+    public void setImsEnableState(boolean imsEnableState) {
+        synchronized (mSyncObj) {
+            logger.debug("imsEnableState=" + imsEnableState);
+            mImsEnableState = imsEnableState;
+        }
     }
 
     // The UCE manager for RCS stack.
@@ -198,18 +201,18 @@ public class RcsStackAdaptor{
     }
 
     public int checkStackAndPublish(){
-        if(!RcsSettingUtils.getCapabilityDiscoveryEnabled(mContext)){
+        if (!RcsSettingUtils.getCapabilityDiscoveryEnabled(mContext)) {
             logger.error("getCapabilityDiscoveryEnabled = false");
             return ResultCode.ERROR_SERVICE_NOT_ENABLED;
         }
 
         int ret = checkStackStatus();
-        if(ret !=ResultCode.SUCCESS){
+        if (ret != ResultCode.SUCCESS) {
             logger.error("checkStackAndPublish ret=" + ret);
             return ret;
         }
 
-        if(!isPublished()){
+        if (!isPublished()) {
             logger.error(
                     "checkStackAndPublish ERROR_SERVICE_NOT_PUBLISHED");
             return ResultCode.ERROR_SERVICE_NOT_PUBLISHED;
@@ -228,52 +231,58 @@ public class RcsStackAdaptor{
     }
 
     public void setPublishState(int publishState) {
-        logger.print("mPublishingState=" + mPublishingState + " publishState=" + publishState);
-        if(mPublishingState != publishState) {
-            // save it for recovery when PresenceService crash.
-            SystemProperties.set("rcs.publish.status",
-                    String.valueOf(publishState));
+        synchronized (mSyncObj) {
+            logger.print("mPublishingState=" + mPublishingState + " publishState=" + publishState);
+            if (mPublishingState != publishState) {
+                // save it for recovery when PresenceService crash.
+                SystemProperties.set("rcs.publish.status",
+                        String.valueOf(publishState));
 
-            // broadcast publish state change intent
-            Intent publishIntent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
-            publishIntent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE,
-                    publishState);
-            mContext.sendStickyBroadcast(publishIntent);
+                // broadcast publish state change intent
+                Intent publishIntent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
+                publishIntent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE,
+                        publishState);
+                mContext.sendStickyBroadcast(publishIntent);
+            }
+
+            mPublishingState = publishState;
         }
-
-        mPublishingState = publishState;
     }
 
     public int getPublishState(){
-        return mPublishingState;
+        synchronized (mSyncObj) {
+            return mPublishingState;
+        }
     }
 
     public int checkStackStatus(){
-        if(!RcsSettingUtils.isEabProvisioned(mContext)) {
-            logger.error("Didn't get EAB provisioned by DM");
-            return ResultCode.ERROR_SERVICE_NOT_ENABLED;
-        }
+        synchronized (mSyncObj) {
+            if (!RcsSettingUtils.isEabProvisioned(mContext)) {
+                logger.error("Didn't get EAB provisioned by DM");
+                return ResultCode.ERROR_SERVICE_NOT_ENABLED;
+            }
 
-        // Don't send request to RCS stack when it is under powering off.
-        // RCS stack is sending UNPUBLISH. It could get race PUBLISH trigger under the case.
-        if(sInPowerDown) {
-            logger.error("checkStackStatus: under powering off");
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
-        }
+            // Don't send request to RCS stack when it is under powering off.
+            // RCS stack is sending UNPUBLISH. It could get race PUBLISH trigger under the case.
+            if (sInPowerDown) {
+                logger.error("checkStackStatus: under powering off");
+                return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            }
 
-        if(mStackService == null){
-            logger.error("checkStackStatus: mStackService == null");
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
-        }
+            if (mStackService == null) {
+                logger.error("checkStackStatus: mStackService == null");
+                return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            }
 
-        if(mStackPresService == null){
-            logger.error("Didn't init sub rcs service.");
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
-        }
+            if (mStackPresService == null) {
+                logger.error("Didn't init sub rcs service.");
+                return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            }
 
-        if(!mImsEnableState){
-            logger.error("mImsEnableState = false");
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            if (!mImsEnableState) {
+                logger.error("mImsEnableState = false");
+                return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            }
         }
 
         return ResultCode.SUCCESS;
@@ -283,18 +292,22 @@ public class RcsStackAdaptor{
         logger.print("requestCapability formatedContacts=" + formatedContacts);
 
         int ret = ResultCode.SUCCESS;
-        try{
-            StatusCode retCode;
-            if(formatedContacts.length == 1){
-                retCode = mStackPresService.getContactCap(
-                        mStackPresenceServiceHandle, formatedContacts[0], taskId);
-            }else{
-                retCode = mStackPresService.getContactListCap(
-                        mStackPresenceServiceHandle, formatedContacts, taskId);
-            }
-            logger.print("GetContactListCap retCode=" + retCode);
+        try {
+            synchronized (mSyncObj) {
+                StatusCode retCode;
+                if (formatedContacts.length == 1) {
+                    retCode = mStackPresService.getContactCap(
+                            mStackPresenceServiceHandle, formatedContacts[0], taskId);
+                } else {
+                    retCode = mStackPresService.getContactListCap(
+                            mStackPresenceServiceHandle, formatedContacts, taskId);
+                }
 
-            ret = RcsUtils.statusCodeToResultCode(retCode.getStatusCode());
+                logger.print("GetContactListCap retCode=" + retCode);
+
+                ret = RcsUtils.statusCodeToResultCode(retCode.getStatusCode());
+            }
+
             logger.debug("requestCapability ret=" + ret);
         }catch(Exception e){
             logger.error("requestCapability exception", e);
@@ -309,12 +322,13 @@ public class RcsStackAdaptor{
 
         int ret = ResultCode.SUCCESS;
         try{
-            StatusCode retCode = mStackPresService.getContactCap(
-                    mStackPresenceServiceHandle, formatedContact, taskId);
-            logger.print("getContactCap retCode=" + retCode);
+            synchronized (mSyncObj) {
+                StatusCode retCode = mStackPresService.getContactCap(
+                        mStackPresenceServiceHandle, formatedContact, taskId);
+                logger.print("getContactCap retCode=" + retCode);
 
-            ret = RcsUtils.statusCodeToResultCode(retCode.getStatusCode());
-
+                ret = RcsUtils.statusCodeToResultCode(retCode.getStatusCode());
+            }
             logger.debug("requestAvailability ret=" + ret);
         }catch(Exception e){
             logger.error("requestAvailability exception", e);
@@ -404,11 +418,12 @@ public class RcsStackAdaptor{
                     );
 
 
-            StatusCode status = mStackPresService.publishMyCap(
-                    mStackPresenceServiceHandle, pMyCapInfo, taskId);
-            logger.print("PublishMyCap status=" + status.getStatusCode());
-
-            ret = RcsUtils.statusCodeToResultCode(status.getStatusCode());
+            synchronized (mSyncObj) {
+                StatusCode status = mStackPresService.publishMyCap(
+                        mStackPresenceServiceHandle, pMyCapInfo, taskId);
+                logger.print("PublishMyCap status=" + status.getStatusCode());
+                ret = RcsUtils.statusCodeToResultCode(status.getStatusCode());
+            }
 
             logger.debug("requestPublication ret=" + ret);
             if(ret != ResultCode.SUCCESS){
@@ -444,55 +459,53 @@ public class RcsStackAdaptor{
         mMsgHandler.sendMessage(reinitMessage);
     }
 
-    synchronized private void doInitImsUceService(){
-        logger.debug("doInitImsUceService");
+    private void doInitImsUceService(){
+        synchronized (mSyncObj) {
+            logger.debug("doInitImsUceService");
 
-        if(mStackService != null){
-            logger.debug("doInitImsUceService mStackService != null");
-            return;
-        }
-
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(ImsUceManager.ACTION_UCE_SERVICE_UP);
-        filter.addAction(ImsUceManager.ACTION_UCE_SERVICE_DOWN);
-
-        mRcsServiceReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                // do something based on the intent's action
-                logger.print("onReceive intent " + intent);
-                String action = intent.getAction();
-                if(ImsUceManager.ACTION_UCE_SERVICE_UP.equals(action)) {
-                     synchronized(mSyncObj){
-                         startInitPresenceTimer(0, PRESENCE_INIT_TYPE_RCS_SERVICE_AVAILABLE);
-                     }
-                 } else if(ImsUceManager.ACTION_UCE_SERVICE_DOWN.equals(action)) {
-                     synchronized(mSyncObj){
-                         clearImsUceService();
-                     }
-                 } else {
-                     logger.debug("unknown intent " + intent);
-                 }
-             }
-        };
-
-        mContext.registerReceiver(mRcsServiceReceiver, filter);
-
-        if(mImsUceManager == null) {
-            mImsUceManager = ImsUceManager.getInstance(mContext,
-                    SubscriptionManager.from(mContext).getDefaultDataPhoneId());
-            if(mImsUceManager == null) {
-                logger.error("Can't init mImsUceManager");
+            if (mStackService != null) {
+                logger.debug("doInitImsUceService mStackService != null");
                 return;
             }
-        }
 
-        mImsUceManager.createUceService(false);
-        mStackService = mImsUceManager.getUceServiceInstance();
-        logger.debug("doInitImsUceService mStackService=" + mStackService);
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(ImsUceManager.ACTION_UCE_SERVICE_UP);
+            filter.addAction(ImsUceManager.ACTION_UCE_SERVICE_DOWN);
 
-        if(mStackService != null) {
-            startInitPresenceTimer(0, PRESENCE_INIT_TYPE_RCS_SERVICE_AVAILABLE);
+            mRcsServiceReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    // do something based on the intent's action
+                    logger.print("onReceive intent " + intent);
+                    String action = intent.getAction();
+                    if (ImsUceManager.ACTION_UCE_SERVICE_UP.equals(action)) {
+                        startInitPresenceTimer(0, PRESENCE_INIT_TYPE_RCS_SERVICE_AVAILABLE);
+                    } else if (ImsUceManager.ACTION_UCE_SERVICE_DOWN.equals(action)) {
+                        clearImsUceService();
+                    } else {
+                        logger.debug("unknown intent " + intent);
+                    }
+                }
+            };
+
+            mContext.registerReceiver(mRcsServiceReceiver, filter);
+
+            if (mImsUceManager == null) {
+                mImsUceManager = ImsUceManager.getInstance(mContext,
+                        SubscriptionManager.from(mContext).getDefaultDataPhoneId());
+                if (mImsUceManager == null) {
+                    logger.error("Can't init mImsUceManager");
+                    return;
+                }
+            }
+
+            mImsUceManager.createUceService(false);
+            mStackService = mImsUceManager.getUceServiceInstance();
+            logger.debug("doInitImsUceService mStackService=" + mStackService);
+
+            if (mStackService != null) {
+                startInitPresenceTimer(0, PRESENCE_INIT_TYPE_RCS_SERVICE_AVAILABLE);
+            }
         }
     }
 
@@ -506,7 +519,7 @@ public class RcsStackAdaptor{
      */
     int initAllSubRcsServices(IUceService uceService, int currentRetry) {
         int ret = -1;
-        synchronized (mSyncObj){
+        synchronized (mSyncObj) {
             // we could receive useless retry since we could fail to cancel the retry timer.
             // We need to ignore such retry if the sub service had been initialized already.
             if(mStackPresService != null && currentRetry>0){
@@ -557,38 +570,43 @@ public class RcsStackAdaptor{
     // Init sub service when IMS get registered.
     public void checkSubService() {
         logger.debug("checkSubService");
-        if(mStackPresService == null) {
-            // Cancel the retry timer.
-            if(mIsIniting){
-                if(mRetryAlarmIntent != null){
-                    mAlarmManager.cancel(mRetryAlarmIntent);
-                    mRetryAlarmIntent = null;
+        synchronized (mSyncObj) {
+            if (mStackPresService == null) {
+                // Cancel the retry timer.
+                if (mIsIniting) {
+                    if (mRetryAlarmIntent != null) {
+                        mAlarmManager.cancel(mRetryAlarmIntent);
+                        mRetryAlarmIntent = null;
+                    }
+                    mIsIniting = false;
                 }
-                mIsIniting = false;
-            }
 
-            // force to init imediately.
-            startInitPresenceTimer(0, PRESENCE_INIT_TYPE_IMS_REGISTERED);
+                // force to init imediately.
+                startInitPresenceTimer(0, PRESENCE_INIT_TYPE_IMS_REGISTERED);
+            }
         }
     }
 
     public void startInitThread(int times){
         final int currentRetry = times;
-        Thread thread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                if (currentRetry >=0 && currentRetry <= MAX_RETRY_COUNT) {
+        Thread thread = new Thread(() -> {
+            synchronized (mSyncObj) {
+                if (currentRetry >= 0 && currentRetry <= MAX_RETRY_COUNT) {
                     refreshUceService();
 
-                    if (initAllSubRcsServices(mStackService, currentRetry) >=0){
+                    if (initAllSubRcsServices(mStackService, currentRetry) >= 0) {
                         logger.debug("init sub rcs service successfully.");
-                        mAlarmManager.cancel(mRetryAlarmIntent);
+                        if (mRetryAlarmIntent != null) {
+                            mAlarmManager.cancel(mRetryAlarmIntent);
+                        }
                     } else {
                         startInitPresenceTimer(currentRetry + 1, PRESENCE_INIT_TYPE_RETRY);
                     }
                 } else {
                     logger.debug("Retry times=" + currentRetry);
-                    mAlarmManager.cancel(mRetryAlarmIntent);
+                    if (mRetryAlarmIntent != null) {
+                        mAlarmManager.cancel(mRetryAlarmIntent);
+                    }
                 }
             }
         }, "initAllSubRcsServices thread");
@@ -611,7 +629,7 @@ public class RcsStackAdaptor{
     }
 
     private void startInitPresenceTimer(int times, int initType){
-        synchronized (mSyncObj){
+        synchronized (mSyncObj) {
             logger.print("set the retry alarm, times=" + times + " initType=" + initType +
                     " mIsIniting=" + mIsIniting);
             if(mIsIniting){
@@ -655,30 +673,34 @@ public class RcsStackAdaptor{
     }
 
     private void refreshUceService() {
-        logger.debug("refreshUceService mImsUceManager=" + mImsUceManager +
-                " mStackService=" + mStackService);
+        synchronized (mSyncObj) {
+            logger.debug("refreshUceService mImsUceManager=" + mImsUceManager +
+                    " mStackService=" + mStackService);
 
-        if(mImsUceManager == null) {
-            mImsUceManager = ImsUceManager.getInstance(mContext,
-                    SubscriptionManager.from(mContext).getDefaultDataPhoneId());
-            if(mImsUceManager == null) {
-                logger.error("Can't init mImsUceManager");
-                return;
+            if (mImsUceManager == null) {
+                mImsUceManager = ImsUceManager.getInstance(mContext,
+                        SubscriptionManager.from(mContext).getDefaultDataPhoneId());
+                if (mImsUceManager == null) {
+                    logger.error("Can't init mImsUceManager");
+                    return;
+                }
             }
-        }
 
-        if(mStackService == null) {
-            mImsUceManager.createUceService(false);
-            mStackService = mImsUceManager.getUceServiceInstance();
-        }
+            if (mStackService == null) {
+                mImsUceManager.createUceService(false);
+                mStackService = mImsUceManager.getUceServiceInstance();
+            }
 
-        logger.debug("refreshUceService mStackService=" + mStackService);
+            logger.debug("refreshUceService mStackService=" + mStackService);
+        }
     }
 
     private void clearImsUceService() {
-        mImsUceManager = null;
-        mStackService = null;
-        mStackPresService = null;
+        synchronized (mSyncObj) {
+            mImsUceManager = null;
+            mStackService = null;
+            mStackPresService = null;
+        }
     }
 
     public void finish() {
@@ -696,6 +718,7 @@ public class RcsStackAdaptor{
     }
 
     protected void finalize() throws Throwable {
+        super.finalize();
         finish();
     }
 
