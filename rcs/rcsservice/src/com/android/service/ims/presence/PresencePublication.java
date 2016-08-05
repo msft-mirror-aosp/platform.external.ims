@@ -268,7 +268,12 @@ public class PresencePublication extends PresenceBase {
                     }
                 } else if(ImsConfig.ACTION_IMS_FEATURE_CHANGED.equalsIgnoreCase(
                         intent.getAction())){
-                    handleProvisionChanged();
+                    int item = intent.getIntExtra(ImsConfig.EXTRA_CHANGED_ITEM, -1);
+                    if ((ImsConfig.ConfigConstants.VLT_SETTING_ENABLED == item) ||
+                            (ImsConfig.ConfigConstants.LVC_SETTING_ENABLED == item) ||
+                            (ImsConfig.ConfigConstants.EAB_SETTING_ENABLED == item)) {
+                        handleProvisionChanged();
+                    }
                 }
             }
         };
