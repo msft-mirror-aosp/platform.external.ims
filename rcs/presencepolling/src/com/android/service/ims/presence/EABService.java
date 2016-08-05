@@ -29,29 +29,22 @@
 package com.android.service.ims.presence;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Calendar;
 
-import android.accounts.Account;
 import android.app.Service;
 import android.app.AlarmManager;
-import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.ComponentName;
-import android.content.ServiceConnection;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
-import android.os.SystemProperties;
 import android.provider.ContactsContract;
 import android.provider.ContactsContract.CommonDataKinds.Phone;
 import android.telephony.PhoneNumberUtils;
@@ -65,11 +58,8 @@ import com.android.ims.ImsManager;
 import com.android.ims.ImsException;
 
 import com.android.ims.RcsManager;
-import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.RcsPresence;
 import com.android.ims.RcsException;
-import com.android.ims.RcsPresenceInfo;
-import com.android.ims.IRcsPresenceListener;
 import com.android.ims.internal.Logger;
 
 public class EABService extends Service {
@@ -86,13 +76,9 @@ public class EABService extends Service {
     private static final int BOOT_COMPLETED = 0;
     private static final int CONTACT_TABLE_MODIFIED = 1;
     private static final int CONTACT_PROFILE_TABLE_MODIFIED = 2;
-    private static final int EAB_RESET_CONTENT_OBSERVERS = 3;
 
     private static final int SYNC_COMPLETE_DELAY_TIMER = 3 * 1000; // 3 seconds.
-    private static final String VOLTE_NUMBER = "volte_number";
-    private static final String VOLTE_NUMBER_STATE = "state";
-    private static final String ACTION_EAB_RESET_CONTENT_OBSERVERS =
-            "com.android.rcs.eab.ACTION_EAB_RESET_CONTENT_OBSERVERS";
+    private static final String TAG = "EABService";
 
     // Framework interface files.
     private RcsManager mRcsManager = null;
@@ -208,7 +194,7 @@ public class EABService extends Service {
 
         initializeRcsInterfacer();
 
-        initResetContentObserverAlarm();
+        startResetContentObserverAlarm();
         super.onCreate();
     }
 
@@ -276,39 +262,25 @@ public class EABService extends Service {
         registerContentObservers();
     }
 
-    private void initResetContentObserverAlarm() {
-        logger.debug("initResetAlarm, content Observers rest every 12 hours");
-        long startInterval = System.currentTimeMillis() + AlarmManager.INTERVAL_HALF_DAY;
+    private AlarmManager.OnAlarmListener mResetContentObserverListener = () -> {
+        logger.debug("mResetContentObserverListener Callback Received");
 
-        Intent intent = new Intent(ACTION_EAB_RESET_CONTENT_OBSERVERS);
-        ((AlarmManager) getSystemService(Context.ALARM_SERVICE)).setInexactRepeating(
-                AlarmManager.RTC_WAKEUP,
-                startInterval,
-                AlarmManager.INTERVAL_HALF_DAY,
-                PendingIntent.getBroadcast(mContext,
-                0,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT));
-
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(ACTION_EAB_RESET_CONTENT_OBSERVERS);
-        registerReceiver(mResetContentObserverReceiver, filter);
-    }
-
-    private BroadcastReceiver  mResetContentObserverReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            logger.debug("Received, ACTION_EAB_RESET_CONTENT_OBSERVERS");
-            mServiceHandler.sendMessage(mServiceHandler.obtainMessage(
-EAB_RESET_CONTENT_OBSERVERS));
-        }
+        resetContentObservers();
+        startResetContentObserverAlarm();
     };
 
+    private void startResetContentObserverAlarm() {
+        logger.debug("startResetContentObserverAlarm: content Observers reset every 12 hours");
+        long startInterval = System.currentTimeMillis() + AlarmManager.INTERVAL_HALF_DAY;
+
+        // Start the resetContentObservers Alarm on the ServiceHandler
+        ((AlarmManager) getSystemService(Context.ALARM_SERVICE)).set(AlarmManager.RTC_WAKEUP,
+                startInterval, TAG, mResetContentObserverListener, mServiceHandler);
+    }
+
     private void cancelResetContentObserverAlarm() {
-        Intent intent = new Intent(ACTION_EAB_RESET_CONTENT_OBSERVERS);
-        PendingIntent pi = PendingIntent.getBroadcast(mContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT);
-        ((AlarmManager) getSystemService(Context.ALARM_SERVICE)).cancel(pi);
+        ((AlarmManager) getSystemService(Context.ALARM_SERVICE)).cancel(
+                mResetContentObserverListener);
     }
 
     @Override
@@ -335,30 +307,25 @@ EAB_RESET_CONTENT_OBSERVERS));
         @Override
         public void handleMessage(Message msg) {
             logger.debug("Enter: handleMessage");
-            ArrayList<RcsPresenceInfo> dataInfoList = null;
 
             switch (msg.what) {
-            case BOOT_COMPLETED:
-                logger.debug("case BOOT_COMPLETED");
-                ensureInitDone();
-                isEABServiceInitializing = false;
-                break;
-            case EAB_RESET_CONTENT_OBSERVERS:
-                logger.debug("case EAB_RESET_CONTENT_OBSERVERS");
-                resetContentObservers();
-                break;
-            case CONTACT_TABLE_MODIFIED:
-                logger.debug("case CONTACT_TABLE_MODIFIED");
-                ensureVideoCallingGroupCreation();
-                validateAndSyncFromContactsDb();
-                break;
-            case CONTACT_PROFILE_TABLE_MODIFIED:
-                logger.debug("case CONTACT_PROFILE_TABLE_MODIFIED");
-                validateAndSyncFromProfileDb();
-                break;
-            default:
-                logger.debug("default usecase hit! Do nothing");
-                break;
+                case BOOT_COMPLETED:
+                    logger.debug("case BOOT_COMPLETED");
+                    ensureInitDone();
+                    isEABServiceInitializing = false;
+                    break;
+                case CONTACT_TABLE_MODIFIED:
+                    logger.debug("case CONTACT_TABLE_MODIFIED");
+                    ensureVideoCallingGroupCreation();
+                    validateAndSyncFromContactsDb();
+                    break;
+                case CONTACT_PROFILE_TABLE_MODIFIED:
+                    logger.debug("case CONTACT_PROFILE_TABLE_MODIFIED");
+                    validateAndSyncFromProfileDb();
+                    break;
+                default:
+                    logger.debug("default usecase hit! Do nothing");
+                    break;
             }
             logger.debug("Exit: handleMessage");
         }
