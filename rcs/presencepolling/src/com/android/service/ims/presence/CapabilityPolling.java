@@ -116,6 +116,10 @@ public class CapabilityPolling {
                 if ((ImsConfig.ConfigConstants.CAPABILITIES_POLL_INTERVAL == item) ||
                     (ImsConfig.ConfigConstants.CAPABILITIES_CACHE_EXPIRATION == item)) {
                     enqueueSettingsChanged();
+                } else if ((ImsConfig.ConfigConstants.VLT_SETTING_ENABLED == item) ||
+                        (ImsConfig.ConfigConstants.LVC_SETTING_ENABLED == item) ||
+                        (ImsConfig.ConfigConstants.EAB_SETTING_ENABLED == item)) {
+                    enqueueProvisionStateChanged();
                 }
             } else if(TelephonyIntents.ACTION_SIM_STATE_CHANGED.equalsIgnoreCase(action)) {
                 String stateExtra = intent.getStringExtra(
@@ -286,7 +290,8 @@ public class CapabilityPolling {
                 }
             }
         }
-
+        logger.print("isPollingReady, mProvisioned: " + mProvisioned +
+                ", mStackAvailable: " + mStackAvailable + ", mPublished: " + mPublished);
         return mStackAvailable && (mPublished == 1) && (mProvisioned == 1);
     }
 
