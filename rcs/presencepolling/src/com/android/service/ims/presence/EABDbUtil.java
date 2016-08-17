@@ -72,8 +72,13 @@ public class EABDbUtil {
                 null, sortOrder);
         ArrayList<PresenceContact> allEligibleContacts = new ArrayList<PresenceContact>();
 
-        logger.debug("cursor count : " + cursor.getCount());
-        if (cursor.moveToFirst()) {
+        if (cursor != null) {
+            logger.debug("cursor count : " + cursor.getCount());
+        } else {
+            logger.debug("cursor = null");
+        }
+
+        if (cursor != null && cursor.moveToFirst()) {
             do {
                 String id = cursor.getString(cursor.getColumnIndex(Contacts._ID));
                 Long time = cursor.getLong(cursor.getColumnIndex(
@@ -94,7 +99,7 @@ public class EABDbUtil {
                             + " = ?", new String[] { id }, null);
                 ArrayList<String> phoneNumList = new ArrayList<String>();
 
-                if (pCur.moveToFirst()) {
+                if (pCur != null && pCur.moveToFirst()) {
                     do {
                         String contactNumber = pCur.getString(pCur.getColumnIndex(
                                 ContactsContract.CommonDataKinds.Phone.NUMBER));
@@ -121,7 +126,9 @@ public class EABDbUtil {
                         }
                     } while (pCur.moveToNext());
                 }
-                pCur.close();
+                if (pCur != null) {
+                    pCur.close();
+                }
             } while (cursor.moveToNext());
         }
         if (null != cursor) {
