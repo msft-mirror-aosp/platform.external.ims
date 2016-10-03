@@ -29,6 +29,7 @@
 package com.android.service.ims;
 
 import java.lang.String;
+import android.telephony.CarrierConfigManager;
 import android.telephony.TelephonyManager;
 import android.content.Context;
 import com.android.ims.ImsConfig;
@@ -51,9 +52,11 @@ public class RcsSettingUtils{
 
     public static boolean isFeatureProvisioned(Context context,
             int featureId, boolean defaultValue) {
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
         // Don't need provision.
-        if (!context.getResources().getBoolean(
-                com.android.internal.R.bool.config_carrier_volte_provisioned)) {
+        if (configManager != null && !configManager.getConfig().getBoolean(
+                CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL)) {
             return true;
         }
 
