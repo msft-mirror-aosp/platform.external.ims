@@ -53,7 +53,8 @@ public class DeviceBoot extends BroadcastReceiver {
         logger.debug("onReceive() in PresencePolling, intent: " +
                 intent + ", context: " + context);
 
-        if (!PollingService.isRcsSupported(context)) {
+        // Don't initialize structures if the device does not support RCS at all.
+        if (!PollingService.isRcsSupportedByDevice()) {
             return;
         }
 
