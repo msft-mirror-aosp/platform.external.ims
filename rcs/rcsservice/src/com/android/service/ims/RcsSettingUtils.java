@@ -29,6 +29,8 @@
 package com.android.service.ims;
 
 import java.lang.String;
+
+import android.os.PersistableBundle;
 import android.telephony.CarrierConfigManager;
 import android.telephony.TelephonyManager;
 import android.content.Context;
@@ -55,9 +57,12 @@ public class RcsSettingUtils{
         CarrierConfigManager configManager = (CarrierConfigManager)
                 context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
         // Don't need provision.
-        if (configManager != null && !configManager.getConfig().getBoolean(
-                CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL)) {
-            return true;
+        if (configManager != null) {
+            PersistableBundle config = configManager.getConfig();
+            if (config != null && !config.getBoolean(
+                    CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL)) {
+                return true;
+            }
         }
 
         boolean provisioned = defaultValue;
