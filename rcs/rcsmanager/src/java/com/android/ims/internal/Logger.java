@@ -197,6 +197,17 @@ public class Logger {
         Log.i(TAG, "[" + mClassName +"] " + trace, e);
     }
 
+    // Hide all numbers except for the last two
+    public static String hidePhoneNumberPii(String number) {
+        if(TextUtils.isEmpty(number) || mRcsTestMode || number.length() <= 2) {
+            return number;
+        }
+        StringBuilder sb = new StringBuilder(number.length());
+        sb.append("...*");
+        sb.append(number.substring(number.length()-2, number.length()));
+        return sb.toString();
+    }
+
     /**
      * Determines if the debug level is currently loggable.
      */

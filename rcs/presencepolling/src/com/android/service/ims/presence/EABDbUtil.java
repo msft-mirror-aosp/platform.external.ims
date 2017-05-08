@@ -135,7 +135,7 @@ public class EABDbUtil {
                             phoneNumList.add(uniquePhoneNum);
 
                             allEligibleContacts.add(new PresenceContact(contactName, contactNumber,
-                                    rawContactId, contactId, dataId, formattedNumber));
+                                    formattedNumber, rawContactId, contactId, dataId));
                             logger.debug("Eligible List Name: " + contactName +
                                     " Number:" + contactNumber + " RawContactID: " + rawContactId +
                                     " contactId: " + contactId + " Data.ID : " + dataId
