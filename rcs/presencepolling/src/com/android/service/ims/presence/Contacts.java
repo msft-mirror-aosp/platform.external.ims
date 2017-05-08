@@ -29,12 +29,12 @@
 package com.android.service.ims.presence;
 
 import android.net.Uri;
-import android.os.SystemClock;
 import android.provider.BaseColumns;
 import android.text.format.Time;
 import com.android.ims.internal.EABContract;
 
 import com.android.ims.internal.ContactNumberUtils;
+import com.android.ims.internal.Logger;
 
 public final class Contacts {
     private Contacts() {}
@@ -280,7 +280,7 @@ public final class Contacts {
             return new StringBuilder(256)
                 .append("Contacts.Item { ")
                 .append("\nId: " + mId)
-                .append("\nNumber: " + mNumber)
+                .append("\nNumber: " + Logger.hidePhoneNumberPii(mNumber))
                 .append("\nLast update time: " + mLastUpdateTime + "(" +
                         getTimeString(mLastUpdateTime) + ")")
                 .append("\nVolte capability timestamp: " + mVolteTimeStamp + "(" +
