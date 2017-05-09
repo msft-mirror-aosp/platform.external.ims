@@ -44,6 +44,7 @@ import android.provider.BaseColumns;
 import android.provider.ContactsContract.Contacts;
 import android.content.ComponentName;
 
+import com.android.ims.internal.ContactNumberUtils;
 import com.android.ims.RcsPresenceInfo;
 import com.android.ims.internal.EABContract;
 import com.android.ims.internal.Logger;
@@ -57,7 +58,7 @@ public class EABProvider extends DatabaseContentProvider{
 
     private static final String EAB_DB_NAME = "rcseab.db";
 
-    private static final int EAB_DB_VERSION = 2;
+    private static final int EAB_DB_VERSION = 3;
 
     private static final int EAB_TABLE = 1;
 
@@ -81,9 +82,9 @@ public class EABProvider extends DatabaseContentProvider{
             + EABContract.EABColumns._ID + " INTEGER PRIMARY KEY AUTOINCREMENT, "
             + EABContract.EABColumns.CONTACT_NAME + " TEXT, "
             + EABContract.EABColumns.CONTACT_NUMBER + " TEXT, "
-            + EABContract.EABColumns.RAW_CONTACT_ID + " TEXT, "
-            + EABContract.EABColumns.CONTACT_ID + " TEXT, "
-            + EABContract.EABColumns.DATA_ID + " TEXT, "
+            + EABContract.EABColumns.RAW_CONTACT_ID + " LONG, "
+            + EABContract.EABColumns.CONTACT_ID + " LONG, "
+            + EABContract.EABColumns.DATA_ID + " LONG, "
             + EABContract.EABColumns.ACCOUNT_TYPE  + " TEXT, "
             + EABContract.EABColumns.VOLTE_CALL_SERVICE_CONTACT_ADDRESS + " TEXT, "
             + EABContract.EABColumns.VOLTE_CALL_CAPABILITY + " INTEGER, "
@@ -119,11 +120,11 @@ public class EABProvider extends DatabaseContentProvider{
      */
     @Override
     public boolean upgradeDatabase(SQLiteDatabase db, int oldVersion, int newVersion) {
-        logger.debug("Enter: upgradeDatabase() - oldVersion = " + oldVersion +
+        logger.info("Enter: upgradeDatabase() - oldVersion = " + oldVersion +
                 " newVersion = " + newVersion);
 
         if (oldVersion == newVersion) {
-            logger.debug("upgradeDatabase oldVersion == newVersion, No Upgrade Required");
+            logger.info("upgradeDatabase oldVersion == newVersion, No Upgrade Required");
             return true;
         }
 
@@ -141,26 +142,49 @@ public class EABProvider extends DatabaseContentProvider{
                 oldVersion++;
                 logger.debug("upgradeDatabase : DB has been upgraded to " + oldVersion);
             }
+            if (oldVersion == 2) {
+                // Add new column to EABPresence table to handle special numbers *67 and *82.
+                addColumn(db, EABContract.EABColumns.TABLE_NAME,
+                        EABContract.EABColumns.FORMATTED_NUMBER, "TEXT DEFAULT NULL");
+
+                // Delete all records from EABPresence table.
+                db.execSQL("DELETE FROM " + EABContract.EABColumns.TABLE_NAME);
+                sendEabResetBroadcast();
+
+                oldVersion++;
+                logger.debug("upgradeDatabase : DB has been upgraded to " + oldVersion);
+            }
+            // add further upgrade code above this
         } catch (SQLException exception) {
             logger.error("Exception during upgradeDatabase. " + exception.getMessage());
-            // DB file had problem
-            throw new InvalidDBException();
+            // If exception occured during upgrade database, then drop EABPresence
+            // and recreate it. Please note in this case, all information stored in
+            // table is lost.
+            db.execSQL(EAB_DROP_STATEMENT);
+            upgradeDatabase(db, 0, EAB_DB_VERSION);
+            sendEabResetBroadcast();
+            logger.debug("Dropped and created new EABPresence table.");
         }
 
-        // add further upgrade code above this
         if (oldVersion == newVersion) {
             logger.debug("DB upgrade complete : to " + newVersion);
         }
 
-        logger.debug("Exit: upgradeDatabase()");
+        logger.info("Exit: upgradeDatabase()");
         return true;
     }
 
     @Override
     protected boolean downgradeDatabase(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // throwing the custom created Exception to catch it in
-        // getWritableDatabase or getReadableDatabase
-        throw new InvalidDBException();
+        logger.info("Enter: downgradeDatabase()");
+        // Drop and recreate EABPresence table as there should not be a scenario
+        // where EAB table version is greater than EAB_DB_VERSION.
+        db.execSQL(EAB_DROP_STATEMENT);
+        upgradeDatabase(db, 0, EAB_DB_VERSION);
+        sendEabResetBroadcast();
+        logger.debug("Dropped and created new EABPresence table.");
+        logger.info("Exit: downgradeDatabase()");
+        return true;
     }
 
     @Override
@@ -350,17 +374,31 @@ public class EABProvider extends DatabaseContentProvider{
         getContext().sendBroadcast(intent);
     }
 
+    private void sendEabResetBroadcast() {
+        logger.info("Enter: sendEabResetBroadcast()");
+        Intent intent = new Intent(com.android.service.ims.presence.Contacts
+                .ACTION_EAB_DATABASE_RESET);
+        ComponentName component = new ComponentName("com.android.service.ims.presence",
+                "com.android.service.ims.presence.AlarmBroadcastReceiver");
+        intent.setComponent(component);
+        getContext().sendBroadcast(intent);
+    }
+
     private ContentValues verifyIfMdnExists(ContentValues cvalues) {
+        String formattedNumber = null;
         String phoneNumber = null;
-        if (cvalues.containsKey(EABContract.EABColumns.CONTACT_NUMBER)) {
+        if (cvalues.containsKey(EABContract.EABColumns.CONTACT_NUMBER)
+                && cvalues.containsKey(EABContract.EABColumns.FORMATTED_NUMBER)) {
             phoneNumber = cvalues.getAsString(EABContract.EABColumns.CONTACT_NUMBER);
+            formattedNumber = cvalues.getAsString(EABContract.EABColumns.FORMATTED_NUMBER);
         } else {
             return cvalues;
         }
-        if (null == phoneNumber) {
+        if (null == formattedNumber) {
             return cvalues;
         }
         String[] projection = new String[] {
+                EABContract.EABColumns.FORMATTED_NUMBER,
                 EABContract.EABColumns.VOLTE_CALL_SERVICE_CONTACT_ADDRESS,
                 EABContract.EABColumns.VOLTE_CALL_CAPABILITY,
                 EABContract.EABColumns.VOLTE_CALL_CAPABILITY_TIMESTAMP,
@@ -371,42 +409,59 @@ public class EABProvider extends DatabaseContentProvider{
                 EABContract.EABColumns.VIDEO_CALL_CAPABILITY_TIMESTAMP,
                 EABContract.EABColumns.VIDEO_CALL_AVAILABILITY,
                 EABContract.EABColumns.VIDEO_CALL_AVAILABILITY_TIMESTAMP};
-        String whereClause = "PHONE_NUMBERS_EQUAL(" +
-                EABContract.EABColumns.CONTACT_NUMBER + ", ?, 0)";
-        String[] selectionArgs = new String[] { phoneNumber };
+        String whereClause = "PHONE_NUMBERS_EQUAL("
+                + EABContract.EABColumns.FORMATTED_NUMBER + ", ?, 0)";
+        String[] selectionArgs = new String[] { formattedNumber };
         Cursor cursor = getContext().getContentResolver().query(EABContract.EABColumns.CONTENT_URI,
-                        projection, whereClause, selectionArgs, null);
+                projection, whereClause, selectionArgs, null);
         if ((null != cursor) && (cursor.getCount() > 0)) {
-            logger.error("Inserting another copy of MDN to EAB DB.");
-            // Update data only from first cursor element.
-            cursor.moveToNext();
-            cvalues.put(EABContract.EABColumns.VOLTE_CALL_SERVICE_CONTACT_ADDRESS,
-                    cursor.getString(cursor.
-                    getColumnIndex(EABContract.EABColumns.VOLTE_CALL_SERVICE_CONTACT_ADDRESS)));
-            cvalues.put(EABContract.EABColumns.VOLTE_CALL_CAPABILITY, cursor.getString(cursor
-                    .getColumnIndex(EABContract.EABColumns.VOLTE_CALL_CAPABILITY)));
-            cvalues.put(EABContract.EABColumns.VOLTE_CALL_CAPABILITY_TIMESTAMP,
-                    cursor.getLong(cursor
-                    .getColumnIndex(EABContract.EABColumns.VOLTE_CALL_CAPABILITY_TIMESTAMP)));
-            cvalues.put(EABContract.EABColumns.VOLTE_CALL_AVAILABILITY, cursor.getString(cursor
-                    .getColumnIndex(EABContract.EABColumns.VOLTE_CALL_AVAILABILITY)));
-            cvalues.put(EABContract.EABColumns.VOLTE_CALL_AVAILABILITY_TIMESTAMP,
-                    cursor.getLong(cursor
-                    .getColumnIndex(EABContract.EABColumns.VOLTE_CALL_AVAILABILITY_TIMESTAMP)));
-            cvalues.put(EABContract.EABColumns.VIDEO_CALL_SERVICE_CONTACT_ADDRESS,
-                    cursor.getString(cursor
-                    .getColumnIndex(EABContract.EABColumns.VIDEO_CALL_SERVICE_CONTACT_ADDRESS)));
-            cvalues.put(EABContract.EABColumns.VIDEO_CALL_CAPABILITY, cursor.getString(cursor
-                    .getColumnIndex(EABContract.EABColumns.VIDEO_CALL_CAPABILITY)));
-            cvalues.put(EABContract.EABColumns.VIDEO_CALL_CAPABILITY_TIMESTAMP,
-                    cursor.getLong(cursor
-                    .getColumnIndex(EABContract.EABColumns.VIDEO_CALL_CAPABILITY_TIMESTAMP)));
-            cvalues.put(EABContract.EABColumns.VIDEO_CALL_AVAILABILITY, cursor.getString(cursor
-                    .getColumnIndex(EABContract.EABColumns.VIDEO_CALL_AVAILABILITY)));
-            cvalues.put(EABContract.EABColumns.VIDEO_CALL_AVAILABILITY_TIMESTAMP,
-                    cursor.getLong(cursor
-                    .getColumnIndex(EABContract.EABColumns.VIDEO_CALL_AVAILABILITY_TIMESTAMP)));
-            cvalues.put(EABContract.EABColumns.CONTACT_LAST_UPDATED_TIMESTAMP, 0);
+            logger.debug("Cursor count is " + cursor.getCount());
+            // Update data only from first valid cursor element.
+            while (cursor.moveToNext()) {
+                ContactNumberUtils contactNumberUtils = ContactNumberUtils.getDefault();
+                String eabFormattedNumber = cursor.getString(
+                        cursor.getColumnIndex(EABContract.EABColumns.FORMATTED_NUMBER));
+
+                // Use contactNumberUtils.format() to format both formattedNumber and
+                // eabFormattedNumber and then check if they are equal.
+                if(contactNumberUtils.format(formattedNumber).equals(
+                        contactNumberUtils.format(eabFormattedNumber))) {
+                    logger.debug("phoneNumber : "+ phoneNumber +" is already stored in EAB DB. "
+                            + " Hence inserting another copy.");
+                    cvalues.put(EABContract.EABColumns.VOLTE_CALL_SERVICE_CONTACT_ADDRESS,
+                            cursor.getString(cursor.getColumnIndex(
+                                  EABContract.EABColumns.VOLTE_CALL_SERVICE_CONTACT_ADDRESS)));
+                    cvalues.put(EABContract.EABColumns.VOLTE_CALL_CAPABILITY, cursor.getString(
+                            cursor.getColumnIndex(
+                                    EABContract.EABColumns.VOLTE_CALL_CAPABILITY)));
+                    cvalues.put(EABContract.EABColumns.VOLTE_CALL_CAPABILITY_TIMESTAMP,
+                            cursor.getLong(cursor.getColumnIndex(
+                                    EABContract.EABColumns.VOLTE_CALL_CAPABILITY_TIMESTAMP)));
+                    cvalues.put(EABContract.EABColumns.VOLTE_CALL_AVAILABILITY,
+                            cursor.getString(cursor.getColumnIndex(
+                                    EABContract.EABColumns.VOLTE_CALL_AVAILABILITY)));
+                    cvalues.put(EABContract.EABColumns.VOLTE_CALL_AVAILABILITY_TIMESTAMP,
+                            cursor.getLong(cursor.getColumnIndex(
+                                   EABContract.EABColumns.VOLTE_CALL_AVAILABILITY_TIMESTAMP)));
+                    cvalues.put(EABContract.EABColumns.VIDEO_CALL_SERVICE_CONTACT_ADDRESS,
+                            cursor.getString(cursor.getColumnIndex(
+                                  EABContract.EABColumns.VIDEO_CALL_SERVICE_CONTACT_ADDRESS)));
+                    cvalues.put(EABContract.EABColumns.VIDEO_CALL_CAPABILITY,
+                            cursor.getString(cursor.getColumnIndex(
+                                    EABContract.EABColumns.VIDEO_CALL_CAPABILITY)));
+                    cvalues.put(EABContract.EABColumns.VIDEO_CALL_CAPABILITY_TIMESTAMP,
+                            cursor.getLong(cursor.getColumnIndex(
+                                    EABContract.EABColumns.VIDEO_CALL_CAPABILITY_TIMESTAMP)));
+                    cvalues.put(EABContract.EABColumns.VIDEO_CALL_AVAILABILITY,
+                            cursor.getString(cursor.getColumnIndex(
+                                    EABContract.EABColumns.VIDEO_CALL_AVAILABILITY)));
+                    cvalues.put(EABContract.EABColumns.VIDEO_CALL_AVAILABILITY_TIMESTAMP,
+                            cursor.getLong(cursor.getColumnIndex(
+                                   EABContract.EABColumns.VIDEO_CALL_AVAILABILITY_TIMESTAMP)));
+                    cvalues.put(EABContract.EABColumns.CONTACT_LAST_UPDATED_TIMESTAMP, 0);
+                    break;
+                }
+            }
         }
         if (null != cursor) {
             cursor.close();
@@ -437,6 +492,9 @@ public class EABProvider extends DatabaseContentProvider{
                         EABContract.EABColumns.CONTACT_NUMBER));
                 String displayName = cursor.getString(cursor.getColumnIndex(
                         EABContract.EABColumns.CONTACT_NAME));
+                logger.debug("Deleting : dataId : " + dataId + " contactId :"  + contactId +
+                        " rawContactId :" + rawContactId + " phoneNumber :" + phoneNumber +
+                        " displayName :" + displayName);
             }
         } else {
             logger.error("cursor is null!");
