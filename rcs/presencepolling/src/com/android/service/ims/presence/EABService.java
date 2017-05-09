@@ -76,6 +76,7 @@ public class EABService extends Service {
     private static final int BOOT_COMPLETED = 0;
     private static final int CONTACT_TABLE_MODIFIED = 1;
     private static final int CONTACT_PROFILE_TABLE_MODIFIED = 2;
+    private static final int EAB_DATABASE_RESET = 3;
 
     private static final int SYNC_COMPLETE_DELAY_TIMER = 3 * 1000; // 3 seconds.
     private static final String TAG = "EABService";
@@ -104,35 +105,48 @@ public class EABService extends Service {
             String action = intent.getAction();
             logger.debug("onReceive intent: " + action);
 
-            if(ContactsContract.Intents.CONTACTS_DATABASE_CREATED.equals(action)) {
-                logger.debug("Contacts database created.");
-                // Delete all entries from EAB Provider as it has to be re-synced with Contact db.
-                mContext.getContentResolver().delete(
-                        EABContract.EABColumns.CONTENT_URI, null, null);
-                // Initialise EABProvider.
-                logger.debug("Resetting timestamp values in shared pref.");
-                SharedPrefUtil.resetEABSharedPref(mContext);
-                // init the EAB db after re-setting.
-                ensureInitDone();
-            } else if(Intent.ACTION_TIME_CHANGED.equals(action) ||
-                    Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
-                Calendar cal = Calendar.getInstance();
-                long currentTimestamp = cal.getTimeInMillis();
-                long lastChangedTimestamp = SharedPrefUtil.getLastContactChangedTimestamp(
-                        mContext, currentTimestamp);
-                logger.debug("lastChangedTimestamp=" + lastChangedTimestamp +
-                        " currentTimestamp=" + currentTimestamp);
-                // Changed time backwards.
-                if(lastChangedTimestamp > currentTimestamp) {
+            switch(action) {
+                case ContactsContract.Intents.CONTACTS_DATABASE_CREATED: {
+                    logger.debug("Contacts database created.");
+                    // Delete all entries from EAB Provider as it has to be re-synced with
+                    // Contact db.
+                    mContext.getContentResolver().delete(
+                            EABContract.EABColumns.CONTENT_URI, null, null);
+                    // Initialise EABProvider.
                     logger.debug("Resetting timestamp values in shared pref.");
                     SharedPrefUtil.resetEABSharedPref(mContext);
-                    // Set Init done to true as only the contact sync timestamps are cleared and
-                    // the EABProvider table data is not cleared.
-                    SharedPrefUtil.setInitDone(mContext, true);
-                    CapabilityPolling capabilityPolling = CapabilityPolling.getInstance(null);
-                    if (capabilityPolling != null) {
-                        capabilityPolling.enqueueDiscovery(CapabilityPolling.ACTION_POLLING_NORMAL);
+                    // init the EAB db after re-setting.
+                    ensureInitDone();
+                    break;
+                }
+                case Intent.ACTION_TIME_CHANGED:
+                    // fall through
+                case Intent.ACTION_TIMEZONE_CHANGED: {
+                    Calendar cal = Calendar.getInstance();
+                    long currentTimestamp = cal.getTimeInMillis();
+                    long lastChangedTimestamp = SharedPrefUtil.getLastContactChangedTimestamp(
+                            mContext, currentTimestamp);
+                    logger.debug("lastChangedTimestamp=" + lastChangedTimestamp +
+                            " currentTimestamp=" + currentTimestamp);
+                    // Changed time backwards.
+                    if(lastChangedTimestamp > currentTimestamp) {
+                        logger.debug("Resetting timestamp values in shared pref.");
+                        SharedPrefUtil.resetEABSharedPref(mContext);
+                        // Set Init done to true as only the contact sync timestamps are cleared and
+                        // the EABProvider table data is not cleared.
+                        SharedPrefUtil.setInitDone(mContext, true);
+                        CapabilityPolling capabilityPolling = CapabilityPolling.getInstance(null);
+                        if (capabilityPolling != null) {
+                            capabilityPolling.enqueueDiscovery(
+                                    CapabilityPolling.ACTION_POLLING_NORMAL);
+                        }
                     }
+                    break;
+                }
+                case Contacts.ACTION_EAB_DATABASE_RESET: {
+                    logger.info("EAB Database Reset, Recreating...");
+                    sendEABResetMessage();
+                    break;
                 }
             }
         }
@@ -192,6 +206,7 @@ public class EABService extends Service {
         filter.addAction(ContactsContract.Intents.CONTACTS_DATABASE_CREATED);
         filter.addAction(Intent.ACTION_TIME_CHANGED);
         filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        filter.addAction(Contacts.ACTION_EAB_DATABASE_RESET);
         registerReceiver(mReceiver, filter);
 
         initializeRcsInterfacer();
@@ -324,6 +339,13 @@ public class EABService extends Service {
                 logger.debug("case CONTACT_PROFILE_TABLE_MODIFIED");
                 validateAndSyncFromProfileDb();
                 break;
+            case EAB_DATABASE_RESET:
+                // Initialise EABProvider.
+                logger.debug("Resetting timestamp values in shared pref.");
+                SharedPrefUtil.resetEABSharedPref(mContext);
+                // init the EAB db after re-setting.
+                ensureInitDone();
+                break;
             default:
                 logger.debug("default usecase hit! Do nothing");
                 break;
@@ -366,6 +388,20 @@ public class EABService extends Service {
             // contact last updated timestamp.
             validateAndSyncFromProfileDb();
             SharedPrefUtil.setInitDone(mContext, true);
+        }
+    }
+
+    private void sendEABResetMessage() {
+        logger.debug("Enter: sendEABResetMsg()");
+        if (null != mServiceHandler) {
+            if (mServiceHandler.hasMessages(EAB_DATABASE_RESET)) {
+                mServiceHandler.removeMessages(EAB_DATABASE_RESET);
+                logger.debug("Removed previous EAB_DATABASE_RESET msg.");
+            }
+
+            logger.debug("Sending new EAB_DATABASE_RESET msg.");
+            Message msg = mServiceHandler.obtainMessage(EAB_DATABASE_RESET);
+            mServiceHandler.sendMessage(msg);
         }
     }
 
@@ -980,14 +1016,14 @@ public class EABService extends Service {
         logger.debug("Removing old number and inserting new number in EABProvider.");
         if (null != oldPhoneNumber) {
             contactListToDelete.add(new PresenceContact(contactName,
-                    oldPhoneNumber, sRawContactId, sContactId, sDataId, null));
+                    oldPhoneNumber, null /*formattedNumber*/, sRawContactId, sContactId, sDataId));
             // Delete old number from EAB Presence Table
             EABDbUtil.deleteNumbersFromEabDb(getApplicationContext(), contactListToDelete);
         }
         if (null != newPhoneNumber) {
             if (EABDbUtil.validateEligibleContact(mContext, newPhoneNumber)) {
                 contactListToInsert.add(new PresenceContact(contactName,
-                        newPhoneNumber, sRawContactId, sContactId, sDataId, newFormattedNumber));
+                        newPhoneNumber, newFormattedNumber, sRawContactId, sContactId, sDataId));
                 // Insert new number from EAB Presence Table
                 EABDbUtil.addContactsToEabDb(getApplicationContext(), contactListToInsert);
             } else {
@@ -1032,7 +1068,7 @@ public class EABService extends Service {
         }
         ArrayList<PresenceContact> contactNameToUpdate = new ArrayList<PresenceContact>();
         contactNameToUpdate.add(new PresenceContact(newDisplayName,
-                phoneNumber, null, sRawContactId, sContactId, sDataId));
+                phoneNumber, null /*formattedNumber */, sRawContactId, sContactId, sDataId));
 
         EABDbUtil.updateNamesInEabDb(getApplicationContext(), contactNameToUpdate);
     }
@@ -1043,8 +1079,8 @@ public class EABService extends Service {
             logger.debug("handleContactDeleted : contactId is null");
         }
         ArrayList<PresenceContact> contactListToDelete = new ArrayList<PresenceContact>();
-        contactListToDelete.add(new PresenceContact(
-                                    null, null, null, null, contactId.toString(), null));
+        contactListToDelete.add(new PresenceContact(null, null, null, null, contactId.toString(),
+                null));
 
         //ContactDbUtil.deleteRawContact(getApplicationContext(), contactListToDelete);
         EABDbUtil.deleteContactsFromEabDb(mContext, contactListToDelete);

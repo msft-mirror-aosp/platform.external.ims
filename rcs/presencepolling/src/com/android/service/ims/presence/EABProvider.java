@@ -58,7 +58,7 @@ public class EABProvider extends DatabaseContentProvider{
 
     private static final String EAB_DB_NAME = "rcseab.db";
 
-    private static final int EAB_DB_VERSION = 3;
+    private static final int EAB_DB_VERSION = 4;
 
     private static final int EAB_TABLE = 1;
 
@@ -110,7 +110,7 @@ public class EABProvider extends DatabaseContentProvider{
     public void bootstrapDatabase(SQLiteDatabase db) {
         logger.info("Enter: bootstrapDatabase() Creating new EAB database");
         upgradeDatabase(db, 0, EAB_DB_VERSION);
-        logger.info("Exit: bootstrapDatabase()");
+        logger.debug("Exit: bootstrapDatabase()");
     }
 
     /*
@@ -122,6 +122,8 @@ public class EABProvider extends DatabaseContentProvider{
     public boolean upgradeDatabase(SQLiteDatabase db, int oldVersion, int newVersion) {
         logger.info("Enter: upgradeDatabase() - oldVersion = " + oldVersion +
                 " newVersion = " + newVersion);
+
+        boolean needsEabResetBroadcast = false;
 
         if (oldVersion == newVersion) {
             logger.info("upgradeDatabase oldVersion == newVersion, No Upgrade Required");
@@ -149,7 +151,17 @@ public class EABProvider extends DatabaseContentProvider{
 
                 // Delete all records from EABPresence table.
                 db.execSQL("DELETE FROM " + EABContract.EABColumns.TABLE_NAME);
-                sendEabResetBroadcast();
+                needsEabResetBroadcast = true;
+
+                oldVersion++;
+                logger.debug("upgradeDatabase : DB has been upgraded to " + oldVersion);
+            }
+            if (oldVersion == 3) {
+                // Delete all records from EABPresence table. A bug in the previous version caused
+                // invalid rows to be created. This version removes all rows to allow the DB to
+                // repopulate.
+                db.execSQL("DELETE FROM " + EABContract.EABColumns.TABLE_NAME);
+                needsEabResetBroadcast = true;
 
                 oldVersion++;
                 logger.debug("upgradeDatabase : DB has been upgraded to " + oldVersion);
@@ -162,15 +174,19 @@ public class EABProvider extends DatabaseContentProvider{
             // table is lost.
             db.execSQL(EAB_DROP_STATEMENT);
             upgradeDatabase(db, 0, EAB_DB_VERSION);
-            sendEabResetBroadcast();
+            needsEabResetBroadcast = true;
             logger.debug("Dropped and created new EABPresence table.");
+        }
+
+        if (needsEabResetBroadcast) {
+            sendEabResetBroadcast();
         }
 
         if (oldVersion == newVersion) {
             logger.debug("DB upgrade complete : to " + newVersion);
         }
 
-        logger.info("Exit: upgradeDatabase()");
+        logger.debug("Exit: upgradeDatabase()");
         return true;
     }
 
@@ -183,14 +199,14 @@ public class EABProvider extends DatabaseContentProvider{
         upgradeDatabase(db, 0, EAB_DB_VERSION);
         sendEabResetBroadcast();
         logger.debug("Dropped and created new EABPresence table.");
-        logger.info("Exit: downgradeDatabase()");
+        logger.debug("Exit: downgradeDatabase()");
         return true;
     }
 
     @Override
     protected int deleteInternal(SQLiteDatabase db, Uri uri, String selection,
             String[] selectionArgs) {
-        logger.info("Enter: deleteInternal()");
+        logger.debug("Enter: deleteInternal()");
         final int match = URI_MATCHER.match(uri);
         String table = null;
         switch (match) {
@@ -203,19 +219,19 @@ public class EABProvider extends DatabaseContentProvider{
                 table = EABContract.EABColumns.TABLE_NAME;
                 break;
             default:
-                logger.info("No match for " + uri);
-                logger.info("Exit: deleteInternal()");
+                logger.debug("No match for " + uri);
+                logger.debug("Exit: deleteInternal()");
                 return 0;
         }
         logger.debug("Deleting from the table" + table + " selection= " + selection);
         printDeletingValues(uri, selection, selectionArgs);
-        logger.info("Exit: deleteInternal()");
+        logger.debug("Exit: deleteInternal()");
         return db.delete(table, selection, selectionArgs);
     }
 
     @Override
     protected Uri insertInternal(SQLiteDatabase db, Uri uri, ContentValues values) {
-        logger.info("Enter: insertInternal()");
+        logger.debug("Enter: insertInternal()");
         final int match = URI_MATCHER.match(uri);
         String table = null;
         String nullColumnHack = null;
@@ -225,7 +241,7 @@ public class EABProvider extends DatabaseContentProvider{
                 break;
             default:
                 logger.warn("No match for " + uri);
-                logger.info("Exit: insertInternal() with null");
+                logger.debug("Exit: insertInternal() with null");
                 return null;
         }
         values = verifyIfMdnExists(values);
@@ -236,10 +252,10 @@ public class EABProvider extends DatabaseContentProvider{
         if (id > 0) {
             String contactNumber = values.getAsString(EABContract.EABColumns.CONTACT_NUMBER);
             sendInsertBroadcast(contactNumber);
-            logger.info("Exit: insertInternal()");
+            logger.debug("Exit: insertInternal()");
             return ContentUris.withAppendedId(uri, id);
         } else {
-            logger.info("Exit: insertInternal() with null");
+            logger.debug("Exit: insertInternal() with null");
             return null;
         }
     }
@@ -247,7 +263,7 @@ public class EABProvider extends DatabaseContentProvider{
     @Override
     protected Cursor queryInternal(SQLiteDatabase db, Uri uri, String[] projection,
             String selection, String[] selectionArgs, String sortOrder) {
-        logger.info("Enter: queryInternal()");
+        logger.debug("Enter: queryInternal()");
         final int match = URI_MATCHER.match(uri);
 
         switch (match) {
@@ -298,17 +314,17 @@ public class EABProvider extends DatabaseContentProvider{
                 break;
             default:
                 logger.warn("No match for " + uri);
-                logger.info("Exit: queryInternal()");
+                logger.debug("Exit: queryInternal()");
                 return null;
         }
-        logger.info("Exit: queryInternal()");
+        logger.debug("Exit: queryInternal()");
         return qb.query(db, projection, selection, selectionArgs, groupBy, having, sortOrder);
     }
 
     @Override
     protected int updateInternal(SQLiteDatabase db, Uri uri, ContentValues values,
             String selection, String[] selectionArgs) {
-        logger.info("Enter: updateInternal()");
+        logger.debug("Enter: updateInternal()");
         int result = 0;
         final int match = URI_MATCHER.match(uri);
 
@@ -340,13 +356,13 @@ public class EABProvider extends DatabaseContentProvider{
             logger.debug("Updating the table " + table + " values= " + values.toString());
             result = db.update(table, values, selection, selectionArgs);
         }
-        logger.info("Exit: updateInternal()");
+        logger.debug("Exit: updateInternal()");
         return result;
     }
 
     @Override
     public String getType(Uri uri) {
-        logger.info("Enter: getType()");
+        logger.debug("Enter: getType()");
         final int match = URI_MATCHER.match(uri);
         switch (match) {
             case EAB_TABLE:
@@ -378,10 +394,7 @@ public class EABProvider extends DatabaseContentProvider{
         logger.info("Enter: sendEabResetBroadcast()");
         Intent intent = new Intent(com.android.service.ims.presence.Contacts
                 .ACTION_EAB_DATABASE_RESET);
-        ComponentName component = new ComponentName("com.android.service.ims.presence",
-                "com.android.service.ims.presence.AlarmBroadcastReceiver");
-        intent.setComponent(component);
-        getContext().sendBroadcast(intent);
+        getContext().sendBroadcast(intent, "com.android.ims.permission.PRESENCE_ACCESS");
     }
 
     private ContentValues verifyIfMdnExists(ContentValues cvalues) {
