@@ -47,6 +47,12 @@ public final class Contacts {
             "android.provider.rcs.eab.EAB_NEW_CONTACT_INSERTED";
 
     /**
+     * Intent that EAB database is reset.
+     */
+    public static final String ACTION_EAB_DATABASE_RESET =
+            "android.provider.rcs.eab.EAB_DATABASE_RESET";
+
+    /**
      * Key to bundle the new phone number inserted in EAB Provider.
      */
     public static final String NEW_PHONE_NUMBER = "newPhoneNumber";
@@ -70,6 +76,15 @@ public final class Contacts {
          */
         public static final Uri CONTENT_URI =
                 Uri.withAppendedPath(Contacts.CONTENT_URI, TABLE_NAME);
+
+        /**
+         * Key defining the contact number.
+         * <P>
+         * Type: TEXT
+         * </P>
+         */
+        public static final String FORMATTED_NUMBER =
+                EABContract.EABColumns.FORMATTED_NUMBER;
 
         /**
          * Key defining the contact number.
