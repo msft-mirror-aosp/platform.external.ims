@@ -45,8 +45,6 @@ public class AlarmBroadcastReceiver extends BroadcastReceiver {
             PollingTask.ACTION_POLLING_RETRY_ALARM;
     private static final String ACTION_EAB_NEW_CONTACT_INSERTED =
             Contacts.ACTION_NEW_CONTACT_INSERTED;
-    private static final String ACTION_RESET_EAB_DATABASE =
-            Contacts.ACTION_EAB_DATABASE_RESET;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -73,10 +71,6 @@ public class AlarmBroadcastReceiver extends BroadcastReceiver {
                 String number = intent.getStringExtra(Contacts.NEW_PHONE_NUMBER);
                 capabilityPolling.enqueueNewContact(number);
             }
-        } else if (ACTION_RESET_EAB_DATABASE.equals(action)) {
-            // Reset the values in shared preference related to sync
-            // logic as EAB database is re-created.
-            SharedPrefUtil.resetEABSharedPref(context);
         } else {
             logger.debug("No interest in this intent: " + action);
         }
