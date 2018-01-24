@@ -48,11 +48,11 @@ import android.net.ConnectivityManager;
 import com.android.ims.ImsConfig.FeatureValueConstants;
 import com.android.ims.ImsManager;
 import com.android.ims.ImsConfig;
-import com.android.ims.ImsReasonInfo;
 import com.android.ims.ImsConnectionStateListener;
 import com.android.ims.ImsServiceClass;
 import com.android.ims.ImsException;
 import android.telephony.SubscriptionManager;
+import android.telephony.ims.ImsReasonInfo;
 
 import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.internal.IRcsService;
