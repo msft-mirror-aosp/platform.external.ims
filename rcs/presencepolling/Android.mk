@@ -36,6 +36,7 @@ LOCAL_JAVA_LIBRARIES := com.android.ims.rcsmanager \
 LOCAL_REQUIRED_MODULES := com.android.ims.rcsmanager
 
 LOCAL_PACKAGE_NAME := PresencePolling
+LOCAL_PRIVATE_PLATFORM_APIS := true
 LOCAL_CERTIFICATE := platform
 #LOCAL_MODULE_TAGS := optional
 
