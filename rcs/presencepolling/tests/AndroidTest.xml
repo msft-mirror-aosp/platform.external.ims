@@ -15,11 +15,13 @@
   ~ limitations under the License
   -->
 <configuration description="Run PresencePolling application tests.">
-    <target_preparer class="com.android.tradefed.targetprep.TestAppInstallSetup">
+    <option name="test-suite-tag" value="apct" />
+    <option name="test-suite-tag" value="apct-instrumentation" />
+    <target_preparer class="com.android.tradefed.targetprep.suite.SuiteApkInstaller">
+        <option name="cleanup-apks" value="true" />
         <option name="test-file-name" value="PresencePollingTests.apk" />
     </target_preparer>
 
-    <option name="test-suite-tag" value="apct" />
     <option name="test-tag" value="PresencePollingTests" />
     <test class="com.android.tradefed.testtype.AndroidJUnitTest" >
         <option name="package" value="com.android.service.ims.presence.tests" />
