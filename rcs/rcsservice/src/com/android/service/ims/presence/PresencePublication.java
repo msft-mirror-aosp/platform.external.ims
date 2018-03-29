@@ -83,10 +83,6 @@ public class PresencePublication extends PresenceBase {
 
     private final Object mSyncObj = new Object();
 
-    final static String ACTION_IMS_FEATURE_AVAILABLE =
-            "com.android.service.ims.presence.ims-feature-status-changed";
-    private static final int INVALID_SERVICE_ID = -1;
-
     boolean mMovedToIWLAN = false;
     boolean mMovedToLTE = false;
     boolean mVoPSEnabled = false;
@@ -1106,13 +1102,6 @@ public class PresencePublication extends PresenceBase {
 
     protected void finalize() throws Throwable {
         finish();
-    }
-
-    private PendingIntent createIncomingCallPendingIntent() {
-        Intent intent = new Intent(ACTION_IMS_FEATURE_AVAILABLE);
-        intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-        return PendingIntent.getBroadcast(mContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     public void onFeatureCapabilityChanged(final int serviceClass,
