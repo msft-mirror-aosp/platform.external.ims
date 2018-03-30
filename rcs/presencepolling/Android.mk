@@ -40,6 +40,8 @@ LOCAL_PRIVATE_PLATFORM_APIS := true
 LOCAL_CERTIFICATE := platform
 #LOCAL_MODULE_TAGS := optional
 
+LOCAL_COMPATIBILITY_SUITE := device-tests
+
 LOCAL_PROGUARD_FLAG_FILES := proguard.flags
 
 include $(BUILD_PACKAGE)
