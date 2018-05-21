@@ -36,8 +36,12 @@ LOCAL_JAVA_LIBRARIES := com.android.ims.rcsmanager \
 LOCAL_REQUIRED_MODULES := com.android.ims.rcsmanager
 
 LOCAL_PACKAGE_NAME := PresencePolling
+LOCAL_PRIVATE_PLATFORM_APIS := true
 LOCAL_CERTIFICATE := platform
 #LOCAL_MODULE_TAGS := optional
 
+LOCAL_PROGUARD_FLAG_FILES := proguard.flags
+
 include $(BUILD_PACKAGE)
 
+include $(call all-makefiles-under,$(LOCAL_PATH))
