@@ -565,6 +565,14 @@ public class RcsStackAdaptor{
                     logger.debug("Create PresService");
                     mStackPresenceServiceHandle = mStackService.createPresenceService(
                             mListenerHandler.mPresenceListener, mListenerHandle);
+                    // If the service handle is -1, then creating the service failed somehow.
+                    // schedule a retry.
+                    if (mStackPresenceServiceHandle < 0) {
+                        logger.error("initAllService : service handle < 0, retrying...");
+                        mIsIniting = false;
+                        mLastInitSubService = -1;
+                        return ret;
+                    }
                     mStackPresService = mStackService.getPresenceService();
                     ret = 0;
                  } else {
