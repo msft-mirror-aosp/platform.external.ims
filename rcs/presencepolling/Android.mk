@@ -29,11 +29,10 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
-LOCAL_JAVA_LIBRARIES := com.android.ims.rcsmanager \
-                        ims-common \
+LOCAL_JAVA_LIBRARIES := ims-common \
                         telephony-common
 
-LOCAL_REQUIRED_MODULES := com.android.ims.rcsmanager
+LOCAL_STATIC_JAVA_LIBRARIES := com.android.ims.rcsmanager
 
 LOCAL_PACKAGE_NAME := PresencePolling
 LOCAL_PRIVATE_PLATFORM_APIS := true
