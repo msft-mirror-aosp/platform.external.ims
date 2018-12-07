@@ -515,9 +515,8 @@ public class RcsStackAdaptor{
             mStackService = mImsUceManager.getUceServiceInstance();
             logger.debug("doInitImsUceService mStackService=" + mStackService);
 
-            if (mStackService != null) {
-                startInitPresenceTimer(0, PRESENCE_INIT_TYPE_RCS_SERVICE_AVAILABLE);
-            }
+            // Do not connect to vendor UCE stack until ACTION_UCE_SERVICE_UP is called.
+            // The intent is sticky, so if we crash, we will get the UCE_SERVICE_UP intent again.
         }
     }
 
@@ -560,7 +559,8 @@ public class RcsStackAdaptor{
 
                 boolean serviceStatus = false;
                 serviceStatus = uceService.getServiceStatus();
-                if (true == serviceStatus && mStackPresService == null) {//init only once.
+                //init only once and ensure connection to UCE  service is available.
+                if (true == serviceStatus && mStackPresService == null && mStackService != null) {
                     logger.print("initAllService : serviceStatus =  true ");
                     logger.debug("Create PresService");
                     mStackPresenceServiceHandle = mStackService.createPresenceService(
@@ -576,7 +576,9 @@ public class RcsStackAdaptor{
                     mStackPresService = mStackService.getPresenceService();
                     ret = 0;
                  } else {
-                    logger.error("initAllService : serviceStatus =  false ");
+                    logger.error("initAllService : serviceStatus =  false - serviceStatus: "
+                            + serviceStatus + ", mStackPresService: " + mStackPresService
+                            + ", mStackService: " + mStackService);
                 }
             } catch (RemoteException e) {
                 logger.error("initAllServices :  DeadObjectException dialog  ");
@@ -585,26 +587,6 @@ public class RcsStackAdaptor{
             mIsIniting = false;
         }
         return ret;
-    }
-
-    // Init sub service when IMS get registered.
-    public void checkSubService() {
-        logger.debug("checkSubService");
-        synchronized (mSyncObj) {
-            if (mStackPresService == null) {
-                // Cancel the retry timer.
-                if (mIsIniting) {
-                    if (mRetryAlarmIntent != null) {
-                        mAlarmManager.cancel(mRetryAlarmIntent);
-                        mRetryAlarmIntent = null;
-                    }
-                    mIsIniting = false;
-                }
-
-                // force to init imediately.
-                startInitPresenceTimer(0, PRESENCE_INIT_TYPE_IMS_REGISTERED);
-            }
-        }
     }
 
     public void startInitThread(int times){
