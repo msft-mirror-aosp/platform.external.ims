@@ -23,7 +23,7 @@ LOCAL_JAVA_LIBRARIES := mockito-target \
                         android.test.runner
 
 LOCAL_STATIC_JAVA_LIBRARIES := \
-        android-support-test \
+        androidx.test.rules \
         mockito-target-minus-junit4 \
         legacy-android-test
 
