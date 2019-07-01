@@ -23,11 +23,12 @@ android_test {
         "android.test.runner",
     ],
     static_libs: [
-        "android-support-test",
+        "androidx.test.rules",
         "mockito-target-minus-junit4",
     ],
     platform_apis: true,
-    instrumentation_for: "PresencePolling",
+    instrumentation_for: "PresencePollingTestHelper",
     certificate: "platform",
     test_suites: ["device-tests"],
+
 }
