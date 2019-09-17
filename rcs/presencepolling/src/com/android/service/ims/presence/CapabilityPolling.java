@@ -44,7 +44,7 @@ import android.os.SystemClock;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-import android.text.format.Time;
+import android.text.format.TimeMigrationUtils;
 import android.text.TextUtils;
 import android.content.ComponentName;
 
@@ -665,9 +665,8 @@ public class CapabilityPolling {
             time = System.currentTimeMillis();
         }
 
-        Time tobj = new Time();
-        tobj.set(time);
-        return String.format("%s.%s", tobj.format("%m-%d %H:%M:%S"), time % 1000);
+        String timeString = TimeMigrationUtils.formatMillisWithFixedFormat(time);
+        return String.format("%s.%s", timeString, time % 1000);
     }
 
     private static final int MSG_CHECK_DISCOVERY = 1;
