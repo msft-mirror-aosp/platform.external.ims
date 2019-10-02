@@ -65,7 +65,6 @@ import com.android.ims.internal.Logger;
 import com.android.service.ims.TaskManager;
 import com.android.service.ims.Task;
 import com.android.service.ims.RcsStackAdaptor;
-import com.android.service.ims.LauncherUtils;
 
 public class StackListener extends Handler{
     /*
