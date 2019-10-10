@@ -40,8 +40,7 @@ import com.android.service.ims.TaskManager;
 public class AlarmBroadcastReceiver extends BroadcastReceiver{
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
-    private static final String ACTION_RETRY_ALARM =
-            RcsStackAdaptor.ACTION_RETRY_ALARM;
+    public static final String ACTION_RETRY_ALARM = "com.android.service.ims.presence.retry";
     private static final String ACTION_TASK_TIMEOUT_ALARM =
             PresenceCapabilityTask.ACTION_TASK_TIMEOUT_ALARM;
     private static final String ACTION_RETRY_PUBLISH_ALARM =
