@@ -74,8 +74,6 @@ import com.android.service.ims.RcsStackAdaptor;
 import com.android.service.ims.RcsUtils;
 import com.android.service.ims.RcsSettingUtils;
 
-import com.android.service.ims.R;
-
 public class PresenceSubscriber extends PresenceBase{
     /*
      * The logger
@@ -88,12 +86,20 @@ public class PresenceSubscriber extends PresenceBase{
 
     private String mAvailabilityRetryNumber = null;
 
+    private final String[] mConfigVolteProvisionErrorOnSubscribeResponse;
+    private final String[] mConfigRcsProvisionErrorOnSubscribeResponse;
+
     /*
      * Constructor
      */
-    public PresenceSubscriber(RcsStackAdaptor rcsStackAdaptor, Context context){
+    public PresenceSubscriber(RcsStackAdaptor rcsStackAdaptor, Context context,
+            String[] configVolteProvisionErrorOnSubscribeResponse,
+            String[] configRcsProvisionErrorOnSubscribeResponse){
         mRcsStackAdaptor = rcsStackAdaptor;
         mContext = context;
+        mConfigVolteProvisionErrorOnSubscribeResponse
+                = configVolteProvisionErrorOnSubscribeResponse;
+        mConfigRcsProvisionErrorOnSubscribeResponse = configRcsProvisionErrorOnSubscribeResponse;
     }
 
     private String numberToUriString(String number){
@@ -360,14 +366,12 @@ public class PresenceSubscriber extends PresenceBase{
 
         int sipCode = pSipResponse.getSipResponseCode();
         String phrase = pSipResponse.getReasonPhrase();
-        if(isInConfigList(sipCode, phrase,
-                R.array.config_volte_provision_error_on_subscribe_response)) {
+        if(isInConfigList(sipCode, phrase, mConfigVolteProvisionErrorOnSubscribeResponse)) {
             logger.print("volte provision sipCode=" + sipCode + " phrase=" + phrase);
             mRcsStackAdaptor.setPublishState(PublishState.PUBLISH_STATE_VOLTE_PROVISION_ERROR);
 
             notifyDm();
-        } else if(isInConfigList(sipCode, phrase,
-                R.array.config_rcs_provision_error_on_subscribe_response)) {
+        } else if(isInConfigList(sipCode, phrase, mConfigRcsProvisionErrorOnSubscribeResponse)) {
             logger.print("rcs provision sipCode=" + sipCode + " phrase=" + phrase);
             mRcsStackAdaptor.setPublishState(PublishState.PUBLISH_STATE_RCS_PROVISION_ERROR);
         }
