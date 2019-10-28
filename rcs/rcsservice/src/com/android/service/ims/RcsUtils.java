@@ -28,10 +28,19 @@
 
 package com.android.service.ims;
 
+import static com.android.ims.RcsPresenceInfo.ServiceType.VOLTE_CALL;
+import static com.android.ims.RcsPresenceInfo.ServiceType.VT_CALL;
+
 import java.lang.String;
+import java.util.ArrayList;
+
+import android.net.Uri;
 import android.telephony.TelephonyManager;
 import android.content.Context;
+import android.telephony.ims.RcsContactUceCapability;
+import android.telephony.ims.stub.RcsCapabilityExchange;
 
+import com.android.ims.RcsPresenceInfo;
 import com.android.ims.internal.uce.common.StatusCode;
 
 import com.android.ims.RcsManager.ResultCode;
@@ -88,6 +97,75 @@ public class RcsUtils{
         }
 
         return ResultCode.SUBSCRIBE_GENERIC;
+    }
+
+    static public int statusCodeToCommandCode(int sipStatusCode) {
+        if (sipStatusCode == StatusCode.UCE_SUCCESS ||
+                sipStatusCode == StatusCode.UCE_SUCCESS_ASYC_UPDATE) {
+            return RcsCapabilityExchange.COMMAND_CODE_SUCCESS;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_INVALID_PARAM) {
+            return RcsCapabilityExchange.COMMAND_CODE_INVALID_PARAM;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_FETCH_ERROR) {
+            return RcsCapabilityExchange.COMMAND_CODE_FETCH_ERROR;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_REQUEST_TIMEOUT) {
+            return RcsCapabilityExchange.COMMAND_CODE_REQUEST_TIMEOUT;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_INSUFFICIENT_MEMORY) {
+            return RcsCapabilityExchange.COMMAND_CODE_INSUFFICIENT_MEMORY;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_LOST_NET) {
+            return RcsCapabilityExchange.COMMAND_CODE_LOST_NETWORK_CONNECTION;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_NOT_SUPPORTED) {
+            return RcsCapabilityExchange.COMMAND_CODE_NOT_SUPPORTED;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_NOT_FOUND) {
+            return RcsCapabilityExchange.COMMAND_CODE_NOT_FOUND;
+        }
+
+        if (sipStatusCode == StatusCode.UCE_FAILURE ||
+                sipStatusCode == StatusCode.UCE_INVALID_SERVICE_HANDLE ||
+                sipStatusCode == StatusCode.UCE_INVALID_LISTENER_HANDLE) {
+            return RcsCapabilityExchange.COMMAND_CODE_GENERIC_FAILURE;
+        }
+
+        return RcsCapabilityExchange.COMMAND_CODE_GENERIC_FAILURE;
+    }
+
+    static public ArrayList<RcsContactUceCapability> transformToRcsContactUceCapability
+            (ArrayList<RcsPresenceInfo> presenceInfoList) {
+        ArrayList<RcsContactUceCapability> uceCapabilityArrayList = new ArrayList<>(
+                presenceInfoList.size());
+        for (RcsPresenceInfo info : presenceInfoList) {
+            RcsContactUceCapability.Builder builder = new RcsContactUceCapability.Builder(Uri
+                    .parse(info.getContactNumber()));
+            if (info.getServiceState(VOLTE_CALL) == RcsPresenceInfo.ServiceState.ONLINE) {
+                builder.add(RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL);
+            }
+            if (info.getServiceState(VT_CALL) == RcsPresenceInfo.ServiceState.ONLINE) {
+                builder.add(RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL);
+            }
+            uceCapabilityArrayList.add(builder.build());
+        }
+        return uceCapabilityArrayList;
+    }
+
+    static public ArrayList<Uri> transformToUri(String[] contacts) {
+        ArrayList<Uri> list = new ArrayList<>();
+        for(String contact : contacts) {
+            list.add(Uri.parse(contact));
+        }
+        return list;
     }
 
     static public String toContactString(String[] contacts) {

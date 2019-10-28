@@ -66,6 +66,7 @@ public class TaskManager{
 
     private int mTaskId = 0;
 
+    public final static int INVALID_ID = -1;
     public final static int TASK_TYPE_GET_CAPABILITY   = 1;
     public final static int TASK_TYPE_GET_AVAILABILITY = 2;
     public final static int TASK_TYPE_PUBLISH          = 3;
@@ -190,16 +191,16 @@ public class TaskManager{
         return null;
     }
 
-    public void onTerminated(String contact){ // for single number capability polling
+    public int onTerminated(String contact){ // for single number capability polling
         if(contact == null){
-            return;
+            return INVALID_ID;
         }
 
         synchronized (mSyncObj){
             Set<String> keys= mTaskMap.keySet();
             if(keys == null){
                 logger.debug("onTerminated keys is null");
-                return;
+                return INVALID_ID;
             }
 
             for(String key:keys){
@@ -225,19 +226,21 @@ public class TaskManager{
                                 TASK_MANAGER_ON_TERMINATED,
                                 messageData);
                         sMsgHandler.sendMessage(notifyMessage);
+                        return task.mTaskId;
                     }
                 }
             }
         }
+        return INVALID_ID;
     }
 
-    public void onTerminated(int requestId, String reason){
+    public int onTerminated(int requestId, String reason){
         logger.debug("onTerminated requestId=" + requestId + " reason=" + reason);
 
         Task task = getTaskByRequestId(requestId);
         if(task == null){
             logger.debug("onTerminated Can't find request " + requestId);
-            return;
+            return INVALID_ID;
         }
 
         synchronized (mSyncObj){
@@ -249,8 +252,10 @@ public class TaskManager{
                 Message notifyMessage = sMsgHandler.obtainMessage(TASK_MANAGER_ON_TERMINATED,
                         messageData);
                 sMsgHandler.sendMessage(notifyMessage);
+                return task.mTaskId;
             }
         }
+        return INVALID_ID;
     }
 
     public void onTimeout(int taskId){
