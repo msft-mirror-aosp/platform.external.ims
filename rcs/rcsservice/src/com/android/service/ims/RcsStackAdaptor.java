@@ -56,6 +56,7 @@ import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.ims.ImsException;
 import android.telephony.SubscriptionManager;
+import android.telephony.ims.stub.RcsPresenceExchangeImplBase;
 
 import com.android.ims.IRcsPresenceListener;
 import com.android.ims.RcsPresence;
@@ -160,11 +161,11 @@ public class RcsStackAdaptor{
     // The singleton.
     private static RcsStackAdaptor sInstance = null;
 
+    private RcsPresenceExchangeImplBase mRcsPresenceExchangeImplBase;
+
     // Constructor
     private RcsStackAdaptor(Context context) {
         mContext = context;
-
-        init();
     }
 
     public static synchronized RcsStackAdaptor getInstance(Context context) {
@@ -342,7 +343,8 @@ public class RcsStackAdaptor{
         return  ret;
     }
 
-    public int requestPublication(RcsPresenceInfo presenceInfo, IRcsPresenceListener listener) {
+    public int requestPublication(RcsPresenceInfo presenceInfo, IRcsPresenceListener listener,
+            int taskId) {
         logger.debug("requestPublication ...");
 
          // Don't use checkStackAndPublish()
@@ -395,7 +397,6 @@ public class RcsStackAdaptor{
             return PresencePublication.PUBLISH_GENIRIC_FAILURE;
         }
 
-        int taskId = TaskManager.getDefault().addPublishTask(myNumber, listener);
         try{
             PresCapInfo pMyCapInfo = new PresCapInfo();
             // Fill cap info
@@ -614,7 +615,7 @@ public class RcsStackAdaptor{
         thread.start();
     }
 
-    private void init() {
+    public void init() {
         createListeningThread();
         logger.debug("after createListeningThread");
 
@@ -727,6 +728,15 @@ public class RcsStackAdaptor{
         }
 
         clearImsUceService();
+    }
+
+    public RcsPresenceExchangeImplBase getRcsPresenceExchangeImplBase() {
+        return mRcsPresenceExchangeImplBase;
+    }
+
+    public void setRcsPresenceExchangeImplBase(
+            RcsPresenceExchangeImplBase rcsPresenceExchangeImplBase) {
+        mRcsPresenceExchangeImplBase = rcsPresenceExchangeImplBase;
     }
 
     protected void finalize() throws Throwable {
