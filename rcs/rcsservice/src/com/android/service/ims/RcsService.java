@@ -80,7 +80,7 @@ public class RcsService extends Service{
 
         logger.debug("RcsService onCreate");
 
-        mRcsStackAdaptor = RcsStackAdaptor.getInstance(this);
+        mRcsStackAdaptor = RcsStackAdaptor.getInstance(null);
 
         mPublication = new PresencePublication(mRcsStackAdaptor, this,
                 getResources().getStringArray(

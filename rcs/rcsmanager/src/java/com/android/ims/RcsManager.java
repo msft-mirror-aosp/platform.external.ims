@@ -239,6 +239,7 @@ public class RcsManager {
     private int mSubId;
     private IRcsService mRcsService = null;
     private RcsServiceDeathRecipient mDeathRecipient = new RcsServiceDeathRecipient();
+    private boolean mPresenceEnabledByFramework = true;
 
     // Interface for presence
     // TODO: Could add other RCS service such RcsChat, RcsFt later.
@@ -290,8 +291,9 @@ public class RcsManager {
             Rlog.e(TAG, "isRcsServiceAvailable RcsException", e);
         }
 
-        if (DBG) Rlog.d(TAG, "isRcsServiceAvailable ret =" + ret);
-        return ret;
+        if (DBG) Rlog.d(TAG, "isRcsServiceAvailable ret =" + ret + " mPresenceEnabledByFramework ="
+                + mPresenceEnabledByFramework);
+        return ret && mPresenceEnabledByFramework;
     }
 
     /**
@@ -380,5 +382,9 @@ public class RcsManager {
                 mContext.sendBroadcast(new Intent(intent));
             }
         }
+    }
+
+    public void setPresenceEnabledByFramework(boolean presenceEnabledByFramework) {
+        mPresenceEnabledByFramework = presenceEnabledByFramework;
     }
 }

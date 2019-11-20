@@ -38,6 +38,9 @@ java_library {
         "src/com/android/service/ims/RcsUtils.java",
         "src/com/android/service/ims/Task.java",
         "src/com/android/service/ims/TaskManager.java",
+        "src/com/android/service/ims/RcsFeatureImpl.java",
+        "src/com/android/service/ims/RcsPresenceExchangeImpl.java",
+        "src/com/android/service/ims/ImsServiceImpl.java",
         // Move the following to the app once the dependencies have been decoupled.
         "src/com/android/service/ims/RcsStackAdaptor.java"
     ],
