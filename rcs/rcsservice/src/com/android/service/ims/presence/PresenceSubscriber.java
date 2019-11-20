@@ -30,30 +30,19 @@ package com.android.service.ims.presence;
 
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.Semaphore;
-import android.content.ContentValues;
+import android.telephony.ims.RcsContactUceCapability;
+import android.telephony.ims.stub.RcsCapabilityExchange;
+import android.telephony.ims.stub.RcsPresenceExchangeImplBase;
 import android.text.TextUtils;
 
-import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import com.android.internal.telephony.TelephonyIntents;
-import android.os.HandlerThread;
-import android.os.RemoteException;
 import android.telephony.TelephonyManager;
-import android.database.Cursor;
 
 import java.lang.String;
-import android.content.Context;
-import android.util.Log;
 
 import com.android.ims.internal.uce.presence.PresSipResponse;
-import com.android.ims.internal.uce.common.StatusCode;
-import com.android.ims.internal.uce.common.StatusCode;
 import com.android.ims.internal.uce.presence.PresSubscriptionState;
 import com.android.ims.internal.uce.presence.PresCmdStatus;
 import com.android.ims.internal.uce.presence.PresResInfo;
@@ -68,6 +57,7 @@ import com.android.ims.RcsPresence.PublishState;
 
 import com.android.ims.internal.Logger;
 import com.android.ims.internal.ContactNumberUtils;
+import com.android.service.ims.RcsPresenceExchangeImpl;
 import com.android.service.ims.TaskManager;
 import com.android.service.ims.Task;
 import com.android.service.ims.RcsStackAdaptor;
@@ -160,6 +150,15 @@ public class PresenceSubscriber extends PresenceBase{
         for(int i=0; i<formatedContacts.length; i++){
             formatedContacts[i] = numberToTelString(formatedNumbers[i]);
         }
+
+        RcsPresenceExchangeImplBase rcsPresenceExchange = RcsStackAdaptor.getInstance(
+                null).getRcsPresenceExchangeImplBase();
+        if (rcsPresenceExchange == null) {
+            ret = ResultCode.SUBSCRIBE_GENIRIC_FAILURE;
+            logger.error("rcsPresenceExchange = null");
+            return ret;
+        }
+
         // In ms
         long timeout = RcsSettingUtils.getCapabPollListSubExp(mContext) * 1000;
         timeout += RcsSettingUtils.getSIPT1Timer(mContext);
@@ -176,12 +175,8 @@ public class PresenceSubscriber extends PresenceBase{
                 listener, timeout);
         logger.print("taskId=" + taskId);
 
-        ret = mRcsStackAdaptor.requestCapability(formatedContacts, taskId);
-        if(ret < ResultCode.SUCCESS){
-            logger.error("requestCapability ret=" + ret + " remove taskId=" + taskId);
-            TaskManager.getDefault().removeTask(taskId);
-        }
-
+        rcsPresenceExchange.requestCapabilities(RcsUtils.transformToUri(formatedContacts),
+                taskId);
         ret = taskId;
 
         return  ret;
@@ -444,6 +439,24 @@ public class PresenceSubscriber extends PresenceBase{
         }
 
         handleCallback(task, errorCode, false);
+        notifyFrameworkForSubscribeResponse(task);
+    }
+
+    private void notifyFrameworkForSubscribeResponse(Task task) {
+        RcsPresenceExchangeImpl rcsPresenceExchange =
+                (RcsPresenceExchangeImpl) RcsStackAdaptor.getInstance(null)
+                        .getRcsPresenceExchangeImplBase();
+        if (rcsPresenceExchange != null) {
+            try {
+                logger.debug("onNetworkResponse taskid=" + task.mTaskId);
+                rcsPresenceExchange.onNetworkResponse(task.mSipResponseCode, task.mSipReasonPhrase,
+                        task.mTaskId);
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+        } else {
+            logger.debug("rcsPresenceExchange = null for sip response");
+        }
     }
 
     private void launchPersistService(Intent intent) {
@@ -481,7 +494,7 @@ public class PresenceSubscriber extends PresenceBase{
         rcsPresenceInfoList.add(rcsPresenceInfo);
 
         // For single contact number we got 1 NOTIFY only. So regard it as terminated.
-        TaskManager.getDefault().onTerminated(rcsPresenceInfo.getContactNumber());
+        int taskId = TaskManager.getDefault().onTerminated(rcsPresenceInfo.getContactNumber());
 
         PresenceAvailabilityTask availabilityTask = TaskManager.getDefault().
                 getAvailabilityTaskByContact(rcsPresenceInfo.getContactNumber());
@@ -495,6 +508,7 @@ public class PresenceSubscriber extends PresenceBase{
                 rcsPresenceInfoList);
         intent.putExtra("updateLastTimestamp", true);
         launchPersistService(intent);
+        notifyPresence(rcsPresenceInfoList, taskId);
     }
 
     public void updatePresences(PresRlmiInfo pRlmiInfo, PresResInfo[] pRcsPresenceInfo) {
@@ -529,8 +543,9 @@ public class PresenceSubscriber extends PresenceBase{
             }
         }
 
+        int taskId = TaskManager.INVALID_ID;
         if(isTerminated){
-            TaskManager.getDefault().onTerminated(pRlmiInfo.getRequestId(),
+            taskId = TaskManager.getDefault().onTerminated(pRlmiInfo.getRequestId(),
                     pRlmiInfo.getSubscriptionTerminatedReason());
         }
 
@@ -543,6 +558,24 @@ public class PresenceSubscriber extends PresenceBase{
                     rcsPresenceInfoList);
             intent.putExtra("updateLastTimestamp", true);
             launchPersistService(intent);
+            notifyPresence(rcsPresenceInfoList, taskId);
+        }
+    }
+
+    private void notifyPresence(ArrayList rcsPresenceInfoList, int taskId) {
+        RcsPresenceExchangeImplBase rcsPresenceExchange = RcsStackAdaptor.getInstance(null)
+                .getRcsPresenceExchangeImplBase();
+        if (rcsPresenceExchange != null) {
+            try {
+                ArrayList<RcsContactUceCapability> list = RcsUtils
+                        .transformToRcsContactUceCapability(rcsPresenceInfoList);
+                logger.debug("onCapabilityRequestResponse taskid="+taskId);
+                rcsPresenceExchange.onCapabilityRequestResponse(list, taskId);
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+        } else {
+            logger.debug("rcsPresenceExchange = null for sip response");
         }
     }
 
@@ -551,7 +584,6 @@ public class PresenceSubscriber extends PresenceBase{
             logger.error("handleCallbackForCmdStatus pCmdStatus=null");
             return;
         }
-
 
         Task taskTmp = TaskManager.getDefault().getTask(pCmdStatus.getUserData());
         int resultCode = RcsUtils.statusCodeToResultCode(pCmdStatus.getStatus().getStatusCode());
@@ -565,12 +597,27 @@ public class PresenceSubscriber extends PresenceBase{
 
             // handle error as the same as temporary network error
             // set availability to false, keep old capability
-            if(resultCode != ResultCode.SUCCESS && task.mContacts != null){
+            if(resultCode != RcsCapabilityExchange.COMMAND_CODE_SUCCESS && task.mContacts !=
+                    null){
                 updateAvailabilityToUnknown(task);
             }
         }
 
         handleCallback(task, resultCode, true);
+
+        RcsPresenceExchangeImplBase rcsPresenceExchange = RcsStackAdaptor.getInstance(null)
+                .getRcsPresenceExchangeImplBase();
+        if (rcsPresenceExchange != null) {
+            try {
+                logger.print("onCommandUpdate id:"+pCmdStatus.getUserData());
+                int commandCode = RcsUtils.statusCodeToCommandCode(pCmdStatus.getStatus().getStatusCode());
+                rcsPresenceExchange.onCommandUpdate(commandCode, pCmdStatus.getUserData());
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+        } else {
+            logger.debug("rcsPresenceExchange = null for sip response");
+        }
     }
 
     private void updateAvailabilityToUnknown(Task inTask){
