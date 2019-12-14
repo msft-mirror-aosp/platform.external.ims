@@ -39,6 +39,8 @@ public class RcsServiceApp extends Application {
     public void onCreate() {
         super.onCreate();
         logger.debug("in onCreate() of RcsServiceApp");
+
+        LauncherUtils.launchRcsService(this);
     }
 }
 
