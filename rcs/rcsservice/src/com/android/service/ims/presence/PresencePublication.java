@@ -28,45 +28,53 @@
 
 package com.android.service.ims.presence;
 
-import android.app.AlarmManager;
-import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
+import java.util.List;
+import java.util.Arrays;
+
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.net.Uri;
-import android.os.Handler;
-import android.os.Message;
-import android.os.SystemClock;
-import android.os.SystemProperties;
+import com.android.internal.telephony.Phone;
 import android.provider.Settings;
-import android.telecom.TelecomManager;
-import android.telephony.SubscriptionManager;
+import android.os.SystemProperties;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.telephony.TelephonyManager;
-import android.telephony.ims.RcsContactUceCapability;
-import android.telephony.ims.stub.RcsPresenceExchangeImplBase;
+import com.android.internal.telephony.IccCardConstants;
+import com.android.internal.telephony.TelephonyIntents;
+import android.telecom.TelecomManager;
+import android.content.IntentFilter;
+import android.app.PendingIntent;
+import android.app.AlarmManager;
+import android.os.SystemClock;
+import android.os.Message;
+import android.os.Handler;
 
-import com.android.ims.ImsConfig;
+
 import com.android.ims.ImsManager;
+import com.android.ims.ImsConnectionStateListener;
 import com.android.ims.ImsServiceClass;
+import com.android.ims.ImsException;
+import android.telephony.SubscriptionManager;
+import com.android.ims.ImsConfig;
+import com.android.ims.ImsConfig.FeatureConstants;
+import com.android.ims.ImsConfig.FeatureValueConstants;
+
+import com.android.service.ims.RcsSettingUtils;
+import com.android.ims.RcsPresenceInfo;
+import com.android.ims.IRcsPresenceListener;
 import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.RcsPresence.PublishState;
-import com.android.ims.RcsPresenceInfo;
+
 import com.android.ims.internal.Logger;
-import com.android.ims.internal.uce.presence.PresCmdStatus;
+import com.android.service.ims.TaskManager;
+import com.android.service.ims.Task;
+
 import com.android.ims.internal.uce.presence.PresPublishTriggerType;
 import com.android.ims.internal.uce.presence.PresSipResponse;
-import com.android.internal.telephony.IccCardConstants;
-import com.android.internal.telephony.Phone;
-import com.android.internal.telephony.TelephonyIntents;
-import com.android.service.ims.RcsPresenceExchangeImpl;
-import com.android.service.ims.RcsSettingUtils;
-import com.android.service.ims.RcsStackAdaptor;
-import com.android.service.ims.RcsUtils;
-import com.android.service.ims.Task;
-import com.android.service.ims.TaskManager;
+import com.android.ims.internal.uce.common.StatusCode;
+import com.android.ims.internal.uce.presence.PresCmdStatus;
 
-import java.util.Arrays;
+import com.android.service.ims.RcsStackAdaptor;
 
 public class PresencePublication extends PresenceBase {
     private Logger logger = Logger.getLogger(this.getClass().getName());
@@ -924,24 +932,7 @@ public class PresencePublication extends PresenceBase {
             mPublishingRequest.setTimestamp(System.currentTimeMillis());
         }
 
-        RcsPresenceExchangeImplBase rcsPresenceExchange = RcsStackAdaptor.getInstance(
-                null).getRcsPresenceExchangeImplBase();
-        int ret = ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
-        if (rcsPresenceExchange != null) {
-            RcsContactUceCapability.Builder builder = new RcsContactUceCapability.Builder(Uri
-                    .parse("tel:" + teleMgr.getLine1Number()));
-            int taskId = TaskManager.getDefault().addPublishTask(teleMgr.getLine1Number(), null);
-            if (publishRequest.getVolteCapable()) {
-                builder.add(RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL);
-            }
-            if (publishRequest.getVtCapable()) {
-                builder.add(RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL);
-            }
-            rcsPresenceExchange.updateCapabilities(builder.build(), taskId);
-        } else {
-            logger.debug("rcsPresenceExchange = null for publish request");
-        }
-
+        int ret = mRcsStackAdaptor.requestPublication(presenceInfo, null);
         if(ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE){
             mHasCachedTrigger = true;
         }else{
@@ -952,19 +943,6 @@ public class PresencePublication extends PresenceBase {
 
     public void handleCmdStatus(PresCmdStatus cmdStatus) {
         super.handleCmdStatus(cmdStatus);
-        int commandCode = RcsUtils.statusCodeToCommandCode(cmdStatus.getStatus().getStatusCode());
-        RcsPresenceExchangeImplBase rcsPresenceExchange = RcsStackAdaptor.getInstance(null)
-                .getRcsPresenceExchangeImplBase();
-        logger.debug("publish cmd:" + cmdStatus);
-        if (rcsPresenceExchange != null) {
-            try {
-                rcsPresenceExchange.onCommandUpdate(commandCode, cmdStatus.getUserData());
-            } catch (Exception e) {
-                logger.error(e.getMessage());
-            }
-        } else {
-            logger.debug("rcsPresenceExchange = null for sip response");
-        }
     }
 
     private PendingIntent mRetryAlarmIntent = null;
@@ -1099,24 +1077,6 @@ public class PresencePublication extends PresenceBase {
         }
 
         handleCallback(task, getPublishState(), false);
-        notifyFrameworkForPublishResponse(task);
-    }
-
-    private void notifyFrameworkForPublishResponse(Task task) {
-        RcsPresenceExchangeImpl rcsPresenceExchange =
-                (RcsPresenceExchangeImpl) RcsStackAdaptor.getInstance(null)
-                        .getRcsPresenceExchangeImplBase();
-        if (rcsPresenceExchange != null) {
-            try {
-                logger.debug("onNetworkResponse task:"+task);
-                rcsPresenceExchange.onNetworkResponse(task.mSipResponseCode, task.mSipReasonPhrase,
-                        task.mTaskId);
-            } catch (Exception e) {
-                logger.error(e.getMessage());
-            }
-        } else {
-            logger.debug("rcsPresenceExchange = null for sip response");
-        }
     }
 
     private static boolean isTtyEnabled(int mode) {
