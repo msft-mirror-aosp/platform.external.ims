@@ -28,14 +28,8 @@
 
 package com.android.service.ims;
 
-import java.util.Set;
-import java.util.HashMap;
-import java.util.List;
-import java.util.ArrayList;
-import android.os.RemoteException;
-
-import com.android.ims.internal.Logger;
 import com.android.ims.IRcsPresenceListener;
+import com.android.ims.internal.Logger;
 
 /**
  * Task

@@ -28,51 +28,60 @@
 
 package com.android.service.ims;
 
-import java.util.List;
-
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.os.IBinder;
-import android.os.RemoteException;
-import android.content.Context;
 import android.app.Service;
-import android.os.ServiceManager;
-import android.os.Handler;
+import android.content.Intent;
 import android.database.ContentObserver;
-import android.content.BroadcastReceiver;
-import android.provider.Settings;
 import android.net.ConnectivityManager;
-import com.android.ims.ImsManager;
-import com.android.ims.ImsConnectionStateListener;
-import com.android.ims.ImsException;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.RemoteException;
+import android.os.ServiceManager;
+import android.provider.Settings;
+import android.telephony.AccessNetworkConstants;
+import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.ims.ImsException;
+import android.telephony.ims.ImsMmTelManager;
 import android.telephony.ims.ImsReasonInfo;
+import android.telephony.ims.RegistrationManager;
+import android.telephony.ims.feature.MmTelFeature;
 
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.internal.IRcsService;
 import com.android.ims.IRcsPresenceListener;
+import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.internal.IRcsPresence;
-
+import com.android.ims.internal.IRcsService;
 import com.android.ims.internal.Logger;
 import com.android.internal.telephony.IccCardConstants;
-import com.android.internal.telephony.TelephonyIntents;
-
+import com.android.service.ims.R;
 import com.android.service.ims.presence.PresencePublication;
 import com.android.service.ims.presence.PresenceSubscriber;
 
-import com.android.service.ims.R;
+import java.util.List;
 
-public class RcsService extends Service{
-    /**
-     * The logger
-     */
+public class RcsService extends Service {
+
+    private static final int IMS_SERVICE_RETRY_TIMEOUT_MS = 5000;
+
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
     private RcsStackAdaptor mRcsStackAdaptor = null;
     private PresencePublication mPublication = null;
     private PresenceSubscriber mSubscriber = null;
 
-    private BroadcastReceiver mReceiver = null;
+    private Handler mRetryHandler;
+    private Runnable mRegisterCallbacks = this::registerImsCallbacksAndSetAssociatedSubscription;
+    private int mNetworkRegistrationType = AccessNetworkConstants.TRANSPORT_TYPE_INVALID;
+
+    private int mAssociatedSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+
+    private SubscriptionManager.OnSubscriptionsChangedListener mOnSubscriptionsChangedListener
+            = new SubscriptionManager.OnSubscriptionsChangedListener() {
+        @Override
+        public void onSubscriptionsChanged() {
+            registerImsCallbacksAndSetAssociatedSubscription();
+        }
+    };
 
     @Override
     public void onCreate() {
@@ -118,51 +127,91 @@ public class RcsService extends Service{
         getContentResolver().registerContentObserver(
                 SubscriptionManager.CONTENT_URI, false, mSiminfoSettingObserver);
 
-        mReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                logger.print("onReceive intent=" + intent);
-                if(ImsManager.ACTION_IMS_SERVICE_UP.equalsIgnoreCase(
-                        intent.getAction())){
-                    handleImsServiceUp();
-                } else if(ImsManager.ACTION_IMS_SERVICE_DOWN.equalsIgnoreCase(
-                        intent.getAction())){
-                    handleImsServiceDown();
-                } else if(TelephonyIntents.ACTION_SIM_STATE_CHANGED.equalsIgnoreCase(
-                        intent.getAction())) {
-                    String stateExtra = intent.getStringExtra(
-                            IccCardConstants.INTENT_KEY_ICC_STATE);
-                    handleSimStateChanged(stateExtra);
+        mRetryHandler = new Handler(Looper.getMainLooper());
+        registerSubscriptionChangedListener();
+    }
+
+    private void registerSubscriptionChangedListener() {
+        SubscriptionManager subscriptionManager = getSystemService(SubscriptionManager.class);
+        if (subscriptionManager != null) {
+            // This will call back after the listener is added automatically.
+            subscriptionManager.addOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
+        } else {
+            logger.error("SubscriptionManager not available! Retrying...");
+            // Retry this again after some time.
+            mRetryHandler.postDelayed(this::registerSubscriptionChangedListener,
+                    IMS_SERVICE_RETRY_TIMEOUT_MS);
+        }
+    }
+
+    private void registerImsCallbacksAndSetAssociatedSubscription() {
+        SubscriptionManager sm = getSystemService(SubscriptionManager.class);
+        if (sm == null) {
+            logger.warn("handleSubscriptionsChanged: SubscriptionManager is null!");
+            return;
+        }
+        List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
+        if (infos == null || infos.isEmpty()) {
+            // There are no active subscriptions right now.
+            handleImsServiceDown();
+        } else {
+            int defaultVoiceSub = SubscriptionManager.getDefaultVoiceSubscriptionId();
+            // Get default voice id and then try to register for IMS callbacks
+            if (defaultVoiceSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                for (SubscriptionInfo info : infos) {
+                    if (!info.isOpportunistic()) {
+                        defaultVoiceSub = info.getSubscriptionId();
+                        break;
+                    }
                 }
             }
-        };
+            if (defaultVoiceSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                handleImsServiceDown();
+                return;
+            }
 
-        IntentFilter statusFilter = new IntentFilter();
-        statusFilter.addAction(ImsManager.ACTION_IMS_SERVICE_UP);
-        statusFilter.addAction(ImsManager.ACTION_IMS_SERVICE_DOWN);
-        statusFilter.addAction(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
-        registerReceiver(mReceiver, statusFilter);
+            ImsMmTelManager mIms = ImsMmTelManager.createForSubscriptionId(defaultVoiceSub);
+            try {
+                if (defaultVoiceSub == mAssociatedSubscription) {
+                    // Don't register duplicate callbacks for the same subscription.
+                    return;
+                }
+                if (mAssociatedSubscription != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                    // Get rid of any existing registrations.
+                    ImsMmTelManager mOldIms = ImsMmTelManager.createForSubscriptionId(
+                            mAssociatedSubscription);
+                    mOldIms.unregisterImsRegistrationCallback(mImsRegistrationCallback);
+                    mOldIms.unregisterMmTelCapabilityCallback(mCapabilityCallback);
+                    logger.print("callbacks unregistered for sub " + mAssociatedSubscription);
+                }
+                // move over registrations.
+                mIms.registerImsRegistrationCallback(getMainExecutor(), mImsRegistrationCallback);
+                mIms.registerMmTelCapabilityCallback(getMainExecutor(), mCapabilityCallback);
+                mAssociatedSubscription = defaultVoiceSub;
+                logger.print("callbacks registered for sub " + mAssociatedSubscription);
+                handleImsServiceUp();
+            } catch (ImsException e) {
+                logger.info("Couldn't register callbacks for " + defaultVoiceSub + ": "
+                        + e.getMessage());
+                if (e.getCode() == ImsException.CODE_ERROR_SERVICE_UNAVAILABLE) {
+                    // IMS temporarily unavailable. Retry after a few seconds.
+                    mRetryHandler.removeCallbacks(mRegisterCallbacks);
+                    mRetryHandler.postDelayed(mRegisterCallbacks, IMS_SERVICE_RETRY_TIMEOUT_MS);
+                }
+            }
+        }
     }
 
     public void handleImsServiceUp() {
         if(mPublication != null) {
             mPublication.handleImsServiceUp();
         }
-
-        registerImsConnectionStateListener();
     }
 
     public void handleImsServiceDown() {
+        mAssociatedSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         if(mPublication != null) {
             mPublication.handleImsServiceDown();
-        }
-    }
-
-    public void handleSimStateChanged(String state) {
-
-        if(IccCardConstants.INTENT_VALUE_ICC_LOADED.equalsIgnoreCase(state)) {
-            // ImsManager depends on a loaded SIM to get the default Voice Registration.
-            registerImsConnectionStateListener();
         }
     }
 
@@ -181,10 +230,8 @@ public class RcsService extends Service{
     public void onDestroy() {
         getContentResolver().unregisterContentObserver(mObserver);
         getContentResolver().unregisterContentObserver(mSiminfoSettingObserver);
-        if (mReceiver != null) {
-            unregisterReceiver(mReceiver);
-            mReceiver = null;
-        }
+        getSystemService(SubscriptionManager.class)
+                .removeOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
 
         mRcsStackAdaptor.finish();
         mPublication.finish();
@@ -199,11 +246,7 @@ public class RcsService extends Service{
         return mPublication;
     }
 
-    public PresenceSubscriber getPresenceSubscriber(){
-        return mSubscriber;
-    }
-
-    IRcsPresence.Stub mIRcsPresenceImpl = new IRcsPresence.Stub(){
+    IRcsPresence.Stub mIRcsPresenceImpl = new IRcsPresence.Stub() {
         /**
          * Asyncrhonously request the latest capability for a given contact list.
          * The result will be saved to DB directly if the contactNumber can be found in DB.
@@ -331,15 +374,18 @@ public class RcsService extends Service{
 
         @Override
         public void onChange(final boolean selfChange) {
-            ImsManager imsManager = ImsManager.getInstance(RcsService.this,
-                    SubscriptionManager.getDefaultVoicePhoneId());
-            if (imsManager == null) {
+            if (mAssociatedSubscription == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
                 return;
             }
-            boolean enabled = imsManager.isVtEnabledByUser();
-             logger.debug("vt enabled status: " + (enabled ? "ON" : "OFF"));
-
-            onVtEnabled(enabled);
+            ImsMmTelManager ims = ImsMmTelManager.createForSubscriptionId(mAssociatedSubscription);
+            try {
+                boolean enabled = ims.isVtSettingEnabled();
+                logger.debug("vt enabled status: " + (enabled ? "ON" : "OFF"));
+                onVtEnabled(enabled);
+            } catch (Exception e) {
+                logger.info("Exception getting VT status for sub:" + mAssociatedSubscription
+                        + ", Exception = " + e.getMessage());
+            }
         }
     }
 
@@ -372,45 +418,35 @@ public class RcsService extends Service{
         }
     };
 
-    void registerImsConnectionStateListener() {
-        try {
-            ImsManager imsManager = ImsManager.getInstance(this,
-                    SubscriptionManager.getDefaultVoicePhoneId());
-            if (imsManager != null) {
-                imsManager.addRegistrationListener(mImsConnectionStateListener);
+    private RegistrationManager.RegistrationCallback mImsRegistrationCallback
+            = new RegistrationManager.RegistrationCallback() {
+
+        @Override
+        public void onRegistered(int imsTransportType) {
+            logger.debug("onImsConnected imsTransportType=" + imsTransportType);
+            mNetworkRegistrationType = imsTransportType;
+            if(mPublication != null) {
+                mPublication.onImsConnected();
             }
-        } catch (ImsException e) {
-            logger.error("addRegistrationListener exception=", e);
         }
-    }
 
-    private ImsConnectionStateListener mImsConnectionStateListener =
-        new ImsConnectionStateListener() {
-            @Override
-            public void onImsConnected(int imsRadioTech) {
-                logger.debug("onImsConnected imsRadioTech=" + imsRadioTech);
-
-                if(mPublication != null) {
-                    mPublication.onImsConnected();
-                }
+        @Override
+        public void onUnregistered(ImsReasonInfo info) {
+            logger.debug("onImsDisconnected");
+            mNetworkRegistrationType = AccessNetworkConstants.TRANSPORT_TYPE_INVALID;
+            if(mPublication != null) {
+                mPublication.onImsDisconnected();
             }
+        }
+    };
 
-            @Override
-            public void onImsDisconnected(ImsReasonInfo imsReasonInfo) {
-                logger.debug("onImsDisconnected");
-                if(mPublication != null) {
-                    mPublication.onImsDisconnected();
-                }
-            }
+    private ImsMmTelManager.CapabilityCallback mCapabilityCallback
+            = new ImsMmTelManager.CapabilityCallback() {
 
-            @Override
-            public void onFeatureCapabilityChanged(final int serviceClass,
-                    final int[] enabledFeatures, final int[] disabledFeatures) {
-                logger.debug("onFeatureCapabilityChanged");
-                if(mPublication != null) {
-                    mPublication.onFeatureCapabilityChanged(serviceClass, enabledFeatures, disabledFeatures);
-                }
-            }
-        };
+        @Override
+        public void onCapabilitiesStatusChanged(MmTelFeature.MmTelCapabilities capabilities) {
+            mPublication.onFeatureCapabilityChanged(mNetworkRegistrationType, capabilities);
+        }
+    };
 }
 
