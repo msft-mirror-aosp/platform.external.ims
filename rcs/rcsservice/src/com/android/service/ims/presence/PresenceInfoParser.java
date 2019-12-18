@@ -30,20 +30,15 @@ package com.android.service.ims.presence;
 
 import java.lang.String;
 import java.util.ArrayList;
-import java.util.List;
-import android.text.TextUtils;
 
+import com.android.ims.internal.Logger;
 import com.android.ims.internal.uce.presence.PresTupleInfo;
 import com.android.ims.internal.uce.presence.PresRlmiInfo;
 import com.android.ims.internal.uce.presence.PresResInfo;
 import com.android.ims.internal.uce.presence.PresResInstanceInfo;
-
-import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.RcsPresenceInfo;
 import com.android.ims.RcsPresenceInfo.ServiceType;
 import com.android.ims.RcsPresenceInfo.ServiceState;
-
-import com.android.ims.internal.Logger;
 
 public class PresenceInfoParser{
     /*

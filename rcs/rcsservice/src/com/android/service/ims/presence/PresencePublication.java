@@ -28,7 +28,6 @@
 
 package com.android.service.ims.presence;
 
-import java.util.List;
 import java.util.Arrays;
 
 import android.content.Context;
@@ -37,10 +36,10 @@ import com.android.internal.telephony.Phone;
 import android.provider.Settings;
 import android.os.SystemProperties;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
+import android.telephony.AccessNetworkConstants;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-import com.android.internal.telephony.IccCardConstants;
-import com.android.internal.telephony.TelephonyIntents;
+
 import android.telecom.TelecomManager;
 import android.content.IntentFilter;
 import android.app.PendingIntent;
@@ -48,33 +47,26 @@ import android.app.AlarmManager;
 import android.os.SystemClock;
 import android.os.Message;
 import android.os.Handler;
+import android.telephony.ims.feature.MmTelFeature;
 
 
 import com.android.ims.ImsManager;
-import com.android.ims.ImsConnectionStateListener;
 import com.android.ims.ImsServiceClass;
-import com.android.ims.ImsException;
-import android.telephony.SubscriptionManager;
 import com.android.ims.ImsConfig;
-import com.android.ims.ImsConfig.FeatureConstants;
-import com.android.ims.ImsConfig.FeatureValueConstants;
-
-import com.android.service.ims.RcsSettingUtils;
+import com.android.ims.internal.Logger;
+import com.android.ims.internal.uce.presence.PresPublishTriggerType;
+import com.android.ims.internal.uce.presence.PresSipResponse;
+import com.android.ims.internal.uce.presence.PresCmdStatus;
 import com.android.ims.RcsPresenceInfo;
 import com.android.ims.IRcsPresenceListener;
 import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.RcsPresence.PublishState;
-
-import com.android.ims.internal.Logger;
-import com.android.service.ims.TaskManager;
-import com.android.service.ims.Task;
-
-import com.android.ims.internal.uce.presence.PresPublishTriggerType;
-import com.android.ims.internal.uce.presence.PresSipResponse;
-import com.android.ims.internal.uce.common.StatusCode;
-import com.android.ims.internal.uce.presence.PresCmdStatus;
-
+import com.android.internal.telephony.IccCardConstants;
+import com.android.internal.telephony.TelephonyIntents;
+import com.android.service.ims.RcsSettingUtils;
 import com.android.service.ims.RcsStackAdaptor;
+import com.android.service.ims.Task;
+import com.android.service.ims.TaskManager;
 
 public class PresencePublication extends PresenceBase {
     private Logger logger = Logger.getLogger(this.getClass().getName());
@@ -1108,101 +1100,65 @@ public class PresencePublication extends PresenceBase {
         finish();
     }
 
-    public void onFeatureCapabilityChanged(final int serviceClass,
-            final int[] enabledFeatures, final int[] disabledFeatures) {
-        logger.debug("onFeatureCapabilityChanged serviceClass="+serviceClass
-                +", enabledFeatures="+Arrays.toString(enabledFeatures)
-                +", disabledFeatures="+Arrays.toString(disabledFeatures));
+    public void onFeatureCapabilityChanged(int networkType,
+            MmTelFeature.MmTelCapabilities capabilities) {
+        logger.debug("onFeatureCapabilityChanged networkType=" + networkType
+                +", capabilities=" + capabilities);
 
-        Thread thread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                onFeatureCapabilityChangedInternal(serviceClass,
-                        enabledFeatures, disabledFeatures);
-            }
-        }, "onFeatureCapabilityChangedInternal thread");
+        Thread thread = new Thread(() -> onFeatureCapabilityChangedInternal(networkType,
+                capabilities), "onFeatureCapabilityChangedInternal thread");
 
         thread.start();
     }
 
-    synchronized private void onFeatureCapabilityChangedInternal(int serviceClass,
-            int[] enabledFeatures, int[] disabledFeatures) {
-        if (serviceClass == ImsServiceClass.MMTEL) {
-            boolean oldIsVolteAvailable = mIsVolteAvailable;
-            boolean oldIsVtAvailable = mIsVtAvailable;
-            boolean oldIsVoWifiAvailable = mIsVoWifiAvailable;
-            boolean oldIsViWifiAvailable = mIsViWifiAvailable;
+    synchronized private void onFeatureCapabilityChangedInternal(int networkType,
+            MmTelFeature.MmTelCapabilities capabilities) {
+        boolean oldIsVolteAvailable = mIsVolteAvailable;
+        boolean oldIsVtAvailable = mIsVtAvailable;
+        boolean oldIsVoWifiAvailable = mIsVoWifiAvailable;
+        boolean oldIsViWifiAvailable = mIsViWifiAvailable;
 
-            if(enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_LTE] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_LTE) {
-                mIsVolteAvailable = true;
-            } else if(enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_LTE] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_UNKNOWN) {
-                mIsVolteAvailable = false;
-            } else {
-                logger.print("invalid value for FEATURE_TYPE_VOICE_OVER_LTE");
-            }
+        mIsVolteAvailable = (networkType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN) &&
+                capabilities.isCapable(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE);
 
-            if(enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_WIFI] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_WIFI) {
-                mIsVoWifiAvailable = true;
-            } else if(enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_WIFI] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_UNKNOWN) {
-                mIsVoWifiAvailable = false;
-            } else {
-                logger.print("invalid value for FEATURE_TYPE_VOICE_OVER_WIFI");
-            }
+        mIsVoWifiAvailable = (networkType == AccessNetworkConstants.TRANSPORT_TYPE_WLAN) &&
+                capabilities.isCapable(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE);
 
-            if (enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VIDEO_OVER_LTE] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_VIDEO_OVER_LTE) {
-                mIsVtAvailable = true;
-            } else if (enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VIDEO_OVER_LTE] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_UNKNOWN) {
-                mIsVtAvailable = false;
-            } else {
-                logger.print("invalid value for FEATURE_TYPE_VIDEO_OVER_LTE");
-            }
+        mIsVtAvailable = (networkType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN) &&
+                capabilities.isCapable(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VIDEO);
 
-            if(enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VIDEO_OVER_WIFI] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_VIDEO_OVER_WIFI) {
-                mIsViWifiAvailable = true;
-            } else if(enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VIDEO_OVER_WIFI] ==
-                    ImsConfig.FeatureConstants.FEATURE_TYPE_UNKNOWN) {
-                mIsViWifiAvailable = false;
-            } else {
-                logger.print("invalid value for FEATURE_TYPE_VIDEO_OVER_WIFI");
-            }
+        mIsViWifiAvailable = (networkType == AccessNetworkConstants.TRANSPORT_TYPE_WLAN) &&
+                capabilities.isCapable(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VIDEO);
 
-            logger.print("mIsVolteAvailable=" + mIsVolteAvailable +
-                    " mIsVoWifiAvailable=" + mIsVoWifiAvailable +
-                    " mIsVtAvailable=" + mIsVtAvailable +
-                    " mIsViWifiAvailable=" + mIsViWifiAvailable +
-                    " oldIsVolteAvailable=" + oldIsVolteAvailable +
-                    " oldIsVoWifiAvailable=" + oldIsVoWifiAvailable +
-                    " oldIsVtAvailable=" + oldIsVtAvailable +
-                    " oldIsViWifiAvailable=" + oldIsViWifiAvailable);
+        logger.print("mIsVolteAvailable=" + mIsVolteAvailable +
+                " mIsVoWifiAvailable=" + mIsVoWifiAvailable +
+                " mIsVtAvailable=" + mIsVtAvailable +
+                " mIsViWifiAvailable=" + mIsViWifiAvailable +
+                " oldIsVolteAvailable=" + oldIsVolteAvailable +
+                " oldIsVoWifiAvailable=" + oldIsVoWifiAvailable +
+                " oldIsVtAvailable=" + oldIsVtAvailable +
+                " oldIsViWifiAvailable=" + oldIsViWifiAvailable);
 
-            if(oldIsVolteAvailable != mIsVolteAvailable ||
-                    oldIsVtAvailable != mIsVtAvailable ||
-                    oldIsVoWifiAvailable != mIsVoWifiAvailable ||
-                    oldIsViWifiAvailable != mIsViWifiAvailable) {
-                if(mGotTriggerFromStack) {
-                    if((Settings.Global.getInt(mContext.getContentResolver(),
-                            Settings.Global.AIRPLANE_MODE_ON, 0) != 0) && !mIsVoWifiAvailable &&
-                            !mIsViWifiAvailable) {
-                        logger.print("Airplane mode was on and no vowifi and viwifi." +
-                            " Don't need publish. Stack will unpublish");
-                        return;
-                    }
-
-                    if(isOnIWLAN()) {
-                        // will check duplicated PUBLISH in requestPublication by invokePublish
-                        invokePublish(PresencePublication.PublishType.
-                                PRES_PUBLISH_TRIGGER_FEATURE_AVAILABILITY_CHANGED);
-                    }
-                } else {
-                    mHasCachedTrigger = true;
+        if(oldIsVolteAvailable != mIsVolteAvailable ||
+                oldIsVtAvailable != mIsVtAvailable ||
+                oldIsVoWifiAvailable != mIsVoWifiAvailable ||
+                oldIsViWifiAvailable != mIsViWifiAvailable) {
+            if(mGotTriggerFromStack) {
+                if((Settings.Global.getInt(mContext.getContentResolver(),
+                        Settings.Global.AIRPLANE_MODE_ON, 0) != 0) && !mIsVoWifiAvailable &&
+                        !mIsViWifiAvailable) {
+                    logger.print("Airplane mode was on and no vowifi and viwifi." +
+                        " Don't need publish. Stack will unpublish");
+                    return;
                 }
+
+                if(isOnIWLAN()) {
+                    // will check duplicated PUBLISH in requestPublication by invokePublish
+                    invokePublish(PresencePublication.PublishType.
+                            PRES_PUBLISH_TRIGGER_FEATURE_AVAILABILITY_CHANGED);
+                }
+            } else {
+                mHasCachedTrigger = true;
             }
         }
     }
