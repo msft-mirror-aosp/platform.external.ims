@@ -28,26 +28,16 @@
 
 package com.android.service.ims.presence;
 
-import java.lang.String;
-import android.content.ContentResolver;
-import android.content.ContentValues;
 import android.content.Context;
 import android.os.RemoteException;
 import android.content.Intent;
-import com.android.internal.telephony.TelephonyIntents;
-import android.content.ComponentName;
 
-import com.android.ims.internal.uce.common.StatusCode;
-import com.android.ims.internal.uce.common.StatusCode;
 import com.android.ims.internal.uce.presence.PresCmdStatus;
-import com.android.ims.internal.uce.presence.PresResInfo;
 import com.android.ims.internal.uce.presence.PresSipResponse;
-
 import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.RcsPresence.PublishState;
-import com.android.ims.RcsPresenceInfo;
-
 import com.android.ims.internal.Logger;
+import com.android.internal.telephony.TelephonyIntents;
 import com.android.service.ims.Task;
 import com.android.service.ims.RcsUtils;
 import com.android.service.ims.TaskManager;

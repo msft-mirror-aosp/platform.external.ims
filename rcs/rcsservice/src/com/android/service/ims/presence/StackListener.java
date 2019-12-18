@@ -28,22 +28,18 @@
 
 package com.android.service.ims.presence;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import android.content.ServiceConnection;
-import android.annotation.SuppressLint;
-import android.content.Intent;
 import android.content.Context;
-import android.content.SharedPreferences;
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
-import android.os.RemoteException;
-import android.text.TextUtils;
-import android.util.Log;
 import android.os.Parcel;
+import android.os.RemoteException;
+import android.util.Log;
 
+import com.android.ims.RcsManager;
+import com.android.ims.internal.Logger;
+import com.android.ims.internal.uce.common.StatusCode;
 import com.android.ims.internal.uce.presence.IPresenceListener;
 import com.android.ims.internal.uce.presence.PresCmdId;
 import com.android.ims.internal.uce.presence.PresCmdStatus;
@@ -52,18 +48,6 @@ import com.android.ims.internal.uce.presence.PresResInfo;
 import com.android.ims.internal.uce.presence.PresRlmiInfo;
 import com.android.ims.internal.uce.presence.PresSipResponse;
 import com.android.ims.internal.uce.presence.PresTupleInfo;
-import com.android.ims.internal.uce.common.StatusCode;
-import com.android.ims.internal.uce.common.StatusCode;
-
-import com.android.ims.RcsManager;
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.RcsPresence;
-import com.android.ims.RcsPresenceInfo;
-import com.android.ims.IRcsPresenceListener;
-
-import com.android.ims.internal.Logger;
-import com.android.service.ims.TaskManager;
-import com.android.service.ims.Task;
 import com.android.service.ims.RcsStackAdaptor;
 
 public class StackListener extends Handler{

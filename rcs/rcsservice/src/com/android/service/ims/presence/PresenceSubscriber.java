@@ -28,51 +28,33 @@
 
 package com.android.service.ims.presence;
 
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.Semaphore;
-import android.content.ContentValues;
-import android.text.TextUtils;
-
-import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import com.android.internal.telephony.TelephonyIntents;
-import android.os.HandlerThread;
-import android.os.RemoteException;
 import android.telephony.TelephonyManager;
-import android.database.Cursor;
+import android.text.TextUtils;
 
-import java.lang.String;
-import android.content.Context;
-import android.util.Log;
-
-import com.android.ims.internal.uce.presence.PresSipResponse;
-import com.android.ims.internal.uce.common.StatusCode;
-import com.android.ims.internal.uce.common.StatusCode;
-import com.android.ims.internal.uce.presence.PresSubscriptionState;
+import com.android.ims.IRcsPresenceListener;
+import com.android.ims.RcsManager.ResultCode;
+import com.android.ims.RcsPresence;
+import com.android.ims.RcsPresence.PublishState;
+import com.android.ims.RcsPresenceInfo;
+import com.android.ims.internal.ContactNumberUtils;
+import com.android.ims.internal.Logger;
 import com.android.ims.internal.uce.presence.PresCmdStatus;
 import com.android.ims.internal.uce.presence.PresResInfo;
 import com.android.ims.internal.uce.presence.PresRlmiInfo;
+import com.android.ims.internal.uce.presence.PresSipResponse;
+import com.android.ims.internal.uce.presence.PresSubscriptionState;
 import com.android.ims.internal.uce.presence.PresTupleInfo;
-
-import com.android.ims.RcsPresenceInfo;
-import com.android.ims.RcsPresence;
-import com.android.ims.IRcsPresenceListener;
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.RcsPresence.PublishState;
-
-import com.android.ims.internal.Logger;
-import com.android.ims.internal.ContactNumberUtils;
-import com.android.service.ims.TaskManager;
-import com.android.service.ims.Task;
+import com.android.service.ims.RcsSettingUtils;
 import com.android.service.ims.RcsStackAdaptor;
 import com.android.service.ims.RcsUtils;
-import com.android.service.ims.RcsSettingUtils;
+import com.android.service.ims.Task;
+import com.android.service.ims.TaskManager;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class PresenceSubscriber extends PresenceBase{
     /*

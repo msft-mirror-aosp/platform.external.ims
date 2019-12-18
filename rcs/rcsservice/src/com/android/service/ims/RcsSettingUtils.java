@@ -28,19 +28,13 @@
 
 package com.android.service.ims;
 
-import java.lang.String;
-
+import android.content.Context;
 import android.os.PersistableBundle;
 import android.telephony.CarrierConfigManager;
-import android.telephony.TelephonyManager;
-import android.content.Context;
+
 import com.android.ims.ImsConfig;
-import com.android.ims.ImsManager;
 import com.android.ims.ImsException;
-import android.os.SystemProperties;
-
-import com.android.ims.RcsManager.ResultCode;
-
+import com.android.ims.ImsManager;
 import com.android.ims.internal.Logger;
 
 public class RcsSettingUtils{
