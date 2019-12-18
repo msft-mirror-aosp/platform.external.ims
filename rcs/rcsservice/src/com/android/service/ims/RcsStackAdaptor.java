@@ -28,58 +28,41 @@
 
 package com.android.service.ims;
 
-import java.util.List;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
-import android.content.pm.ServiceInfo;
 import android.content.Context;
 import android.content.Intent;
-import android.app.PendingIntent;
 import android.content.IntentFilter;
-import android.content.ServiceConnection;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
-import android.telephony.TelephonyManager;
-import android.app.AlarmManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
-import com.android.ims.ImsConfig;
-import com.android.ims.ImsManager;
-import com.android.ims.ImsException;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 
 import com.android.ims.IRcsPresenceListener;
-import com.android.ims.RcsPresence;
 import com.android.ims.RcsManager.ResultCode;
+import com.android.ims.RcsPresence;
 import com.android.ims.RcsPresence.PublishState;
-
-import com.android.ims.internal.Logger;
+import com.android.ims.RcsPresenceInfo;
 import com.android.ims.internal.ContactNumberUtils;
-import com.android.service.ims.presence.PresencePublication;
-
+import com.android.ims.internal.Logger;
+import com.android.ims.internal.uce.common.CapInfo;
+import com.android.ims.internal.uce.common.StatusCode;
+import com.android.ims.internal.uce.common.UceLong;
 import com.android.ims.internal.uce.presence.IPresenceService;
 import com.android.ims.internal.uce.presence.PresCapInfo;
-import com.android.ims.internal.uce.common.CapInfo;
 import com.android.ims.internal.uce.uceservice.IUceService;
 import com.android.ims.internal.uce.uceservice.ImsUceManager;
-import com.android.ims.internal.uce.common.UceLong;
-import com.android.ims.internal.uce.common.StatusCode;
-
-import com.android.ims.IRcsPresenceListener;
-import com.android.ims.RcsPresenceInfo;
-
-import com.android.service.ims.presence.StackListener;
-import com.android.service.ims.presence.PresenceInfoParser;
 import com.android.service.ims.presence.AlarmBroadcastReceiver;
+import com.android.service.ims.presence.PresenceInfoParser;
+import com.android.service.ims.presence.PresencePublication;
+import com.android.service.ims.presence.StackListener;
 
 public class RcsStackAdaptor{
     private static final boolean DEBUG = true;

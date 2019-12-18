@@ -59,9 +59,6 @@ android_app {
         "src/com/android/service/ims/RcsService.java",
         "src/com/android/service/ims/RcsServiceApp.java"
     ],
-    libs: [
-            "ims-common",
-        ],
     static_libs: [
         "ucepresencelib"
     ],

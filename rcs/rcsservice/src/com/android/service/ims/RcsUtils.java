@@ -28,15 +28,9 @@
 
 package com.android.service.ims;
 
-import java.lang.String;
-import android.telephony.TelephonyManager;
-import android.content.Context;
-
-import com.android.ims.internal.uce.common.StatusCode;
-
 import com.android.ims.RcsManager.ResultCode;
-
 import com.android.ims.internal.Logger;
+import com.android.ims.internal.uce.common.StatusCode;
 
 public class RcsUtils{
     /*
