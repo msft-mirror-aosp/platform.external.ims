@@ -33,7 +33,6 @@ import android.content.Context;
 import android.content.Intent;
 
 import com.android.ims.internal.Logger;
-
 import com.android.service.ims.RcsStackAdaptor;
 import com.android.service.ims.TaskManager;
 
