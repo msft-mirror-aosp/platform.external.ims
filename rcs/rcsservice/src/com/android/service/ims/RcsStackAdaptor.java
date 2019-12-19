@@ -44,12 +44,11 @@ import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.ims.RcsContactUceCapability;
+import android.text.TextUtils;
 
-import com.android.ims.IRcsPresenceListener;
-import com.android.ims.RcsManager.ResultCode;
+import com.android.ims.ResultCode;
 import com.android.ims.RcsPresence;
-import com.android.ims.RcsPresence.PublishState;
-import com.android.ims.RcsPresenceInfo;
 import com.android.ims.internal.ContactNumberUtils;
 import com.android.ims.internal.Logger;
 import com.android.ims.internal.uce.common.CapInfo;
@@ -59,17 +58,22 @@ import com.android.ims.internal.uce.presence.IPresenceService;
 import com.android.ims.internal.uce.presence.PresCapInfo;
 import com.android.ims.internal.uce.uceservice.IUceService;
 import com.android.ims.internal.uce.uceservice.ImsUceManager;
-import com.android.service.ims.presence.AlarmBroadcastReceiver;
-import com.android.service.ims.presence.PresenceInfoParser;
-import com.android.service.ims.presence.PresencePublication;
-import com.android.service.ims.presence.StackListener;
+import com.android.service.ims.presence.PresenceBase;
+import com.android.service.ims.presence.PresencePublisher;
+import com.android.service.ims.presence.SubscribePublisher;
 
-public class RcsStackAdaptor{
+public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     private static final boolean DEBUG = true;
 
     private static final String PERSIST_SERVICE_NAME =
             "com.android.service.ims.presence.PersistService";
     private static final String PERSIST_SERVICE_PACKAGE = "com.android.service.ims.presence";
+
+    /**
+     * PendingIntent action used to retry getting the UCE service. Need an associated
+     * BroadcastReceiver.
+     */
+    public static final String ACTION_RETRY_ALARM = "com.android.service.ims.presence.retry";
 
     // The logger
     private Logger logger = Logger.getLogger(this.getClass().getName());
@@ -83,7 +87,7 @@ public class RcsStackAdaptor{
 
     // provision status can be set by both subscribe and pubilish
     // for unprovisioned for 403 or 404
-    private volatile int mPublishingState = PublishState.PUBLISH_STATE_NOT_PUBLISHED;
+    private volatile int mPublishingState = PresenceBase.PUBLISH_STATE_NOT_PUBLISHED;
 
     // It is initializing the stack presence service.
     private volatile boolean mIsIniting = false;
@@ -186,7 +190,8 @@ public class RcsStackAdaptor{
         return mListenerHandler;
     }
 
-    public int checkStackAndPublish(){
+    @Override
+    public int getStackStatusForCapabilityRequest() {
         if (!RcsSettingUtils.getCapabilityDiscoveryEnabled(mContext)) {
             logger.error("getCapabilityDiscoveryEnabled = false");
             return ResultCode.ERROR_SERVICE_NOT_ENABLED;
@@ -199,16 +204,15 @@ public class RcsStackAdaptor{
         }
 
         if (!isPublished()) {
-            logger.error(
-                    "checkStackAndPublish ERROR_SERVICE_NOT_PUBLISHED");
+            logger.error("checkStackAndPublish ERROR_SERVICE_NOT_PUBLISHED");
             return ResultCode.ERROR_SERVICE_NOT_PUBLISHED;
         }
 
         return ResultCode.SUCCESS;
     }
 
-    private boolean isPublished(){
-        if(getPublishState() != PublishState.PUBLISH_STATE_200_OK){
+    private boolean isPublished() {
+        if (getPublisherState() != PresenceBase.PUBLISH_STATE_200_OK) {
             logger.error("Didnt' publish properly");
             return false;
         }
@@ -216,33 +220,30 @@ public class RcsStackAdaptor{
         return true;
     }
 
-    public void setPublishState(int publishState) {
+    @Override
+    public void updatePublisherState(@PresenceBase.PresencePublishState int publishState) {
         synchronized (mSyncObj) {
             logger.print("mPublishingState=" + mPublishingState + " publishState=" + publishState);
-            if (mPublishingState != publishState) {
-                // save it for recovery when PresenceService crash.
-                SystemProperties.set("rcs.publish.status",
-                        String.valueOf(publishState));
-
-                Intent publishIntent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
-                publishIntent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
-                // Start PersistService and broadcast to other receivers that are listening
-                // dynamically.
-                mContext.sendStickyBroadcast(publishIntent);
-                launchPersistService(publishIntent);
-            }
-
             mPublishingState = publishState;
         }
+        // save it for recovery when PresenceService crash.
+        SystemProperties.set("rcs.publish.status", String.valueOf(publishState));
+        Intent publishIntent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
+        publishIntent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
+        // Start PersistService and broadcast to other receivers that are listening
+        // dynamically.
+        mContext.sendStickyBroadcast(publishIntent);
+        launchPersistService(publishIntent);
     }
 
-    public int getPublishState(){
+    @Override
+    public @PresenceBase.PresencePublishState int getPublisherState() {
         synchronized (mSyncObj) {
             return mPublishingState;
         }
     }
 
-    public int checkStackStatus(){
+    private int checkStackStatus() {
         synchronized (mSyncObj) {
             if (!RcsSettingUtils.isEabProvisioned(mContext)) {
                 logger.error("Didn't get EAB provisioned by DM");
@@ -275,19 +276,20 @@ public class RcsStackAdaptor{
         return ResultCode.SUCCESS;
     }
 
-    public int requestCapability(String[] formatedContacts, int taskId){
-        logger.print("requestCapability formatedContacts=" + formatedContacts);
+    @Override
+    public int requestCapability(String[] formattedContacts, int taskId) {
+        logger.print("requestCapability formattedContacts=" + formattedContacts);
 
         int ret = ResultCode.SUCCESS;
         try {
             synchronized (mSyncObj) {
                 StatusCode retCode;
-                if (formatedContacts.length == 1) {
+                if (formattedContacts.length == 1) {
                     retCode = mStackPresService.getContactCap(
-                            mStackPresenceServiceHandle, formatedContacts[0], taskId);
+                            mStackPresenceServiceHandle, formattedContacts[0], taskId);
                 } else {
                     retCode = mStackPresService.getContactListCap(
-                            mStackPresenceServiceHandle, formatedContacts, taskId);
+                            mStackPresenceServiceHandle, formattedContacts, taskId);
                 }
 
                 logger.print("GetContactListCap retCode=" + retCode);
@@ -304,14 +306,15 @@ public class RcsStackAdaptor{
         return  ret;
     }
 
-    public int requestAvailability(String formatedContact, int taskId){
+    @Override
+    public int requestAvailability(String formattedContact, int taskId) {
         logger.debug("requestAvailability ...");
 
         int ret = ResultCode.SUCCESS;
         try{
             synchronized (mSyncObj) {
                 StatusCode retCode = mStackPresService.getContactCap(
-                        mStackPresenceServiceHandle, formatedContact, taskId);
+                        mStackPresenceServiceHandle, formattedContact, taskId);
                 logger.print("getContactCap retCode=" + retCode);
 
                 ret = RcsUtils.statusCodeToResultCode(retCode.getStatusCode());
@@ -325,7 +328,8 @@ public class RcsStackAdaptor{
         return  ret;
     }
 
-    public int requestPublication(RcsPresenceInfo presenceInfo, IRcsPresenceListener listener) {
+    @Override
+    public int requestPublication(RcsContactUceCapability capabilities) {
         logger.debug("requestPublication ...");
 
          // Don't use checkStackAndPublish()
@@ -338,15 +342,15 @@ public class RcsStackAdaptor{
 
         TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
             Context.TELEPHONY_SERVICE);
-        if(teleMgr == null){
+        if (teleMgr == null) {
             logger.error("teleMgr = null");
-            return PresencePublication.PUBLISH_GENIRIC_FAILURE;
+            return ResultCode.PUBLISH_GENERIC_FAILURE;
         }
 
         String myNumUri = null;
         String myDomain = teleMgr.getIsimDomain();
         logger.debug("myDomain=" + myDomain);
-        if(myDomain != null && myDomain.length() !=0){
+        if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
             String[] impu = teleMgr.getIsimImpu();
 
             if(impu !=null){
@@ -363,34 +367,32 @@ public class RcsStackAdaptor{
 
         String myNumber = PresenceInfoParser.getPhoneFromUri(myNumUri);
 
-        if(myNumber == null){
+        if (myNumber == null) {
             myNumber = ContactNumberUtils.getDefault().format(teleMgr.getLine1Number());
-            if(myDomain != null && myDomain.length() !=0){
+            if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
                 myNumUri = "sip:" + myNumber + "@" + myDomain;
-            }else{
+            } else {
                 myNumUri = "tel:" + myNumber;
             }
         }
 
         logger.print("myNumUri=" + myNumUri + " myNumber=" + myNumber);
-        if(myNumUri == null || myNumber == null){
+        if (myNumUri == null || myNumber == null) {
             logger.error("Didn't find number or impu.");
-            return PresencePublication.PUBLISH_GENIRIC_FAILURE;
+            return ResultCode.PUBLISH_GENERIC_FAILURE;
         }
 
-        int taskId = TaskManager.getDefault().addPublishTask(myNumber, listener);
-        try{
+        int taskId = TaskManager.getDefault().addPublishTask(myNumber);
+        try {
             PresCapInfo pMyCapInfo = new PresCapInfo();
             // Fill cap info
             pMyCapInfo.setContactUri(myNumUri);
 
             CapInfo capInfo = new CapInfo();
-            capInfo.setIpVoiceSupported(presenceInfo.getServiceState(
-                    RcsPresenceInfo.ServiceType.VOLTE_CALL)
-                    == RcsPresenceInfo.ServiceState.ONLINE);
-            capInfo.setIpVideoSupported(presenceInfo.getServiceState(
-                    RcsPresenceInfo.ServiceType.VT_CALL)
-                    == RcsPresenceInfo.ServiceState.ONLINE);
+            capInfo.setIpVoiceSupported(capabilities.isCapable(
+                    RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL));
+            capInfo.setIpVideoSupported(capabilities.isCapable(
+                    RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL));
             capInfo.setCdViaPresenceSupported(true);
 
             capInfo.setFtSupported(false); // TODO: support FT
@@ -413,12 +415,12 @@ public class RcsStackAdaptor{
             }
 
             logger.debug("requestPublication ret=" + ret);
-            if(ret != ResultCode.SUCCESS){
+            if (ret != ResultCode.SUCCESS) {
                 logger.error("requestPublication remove taskId=" + taskId);
                 TaskManager.getDefault().removeTask(taskId);
                 return ret;
             }
-        }catch(RemoteException e){
+        } catch (RemoteException e) {
             e.printStackTrace();
             logger.error("Exception when call mStackPresService.getContactCap");
             logger.error("requestPublication remove taskId=" + taskId);
@@ -608,6 +610,12 @@ public class RcsStackAdaptor{
         initImsUceService();
 
         setInPowerDown(false);
+        try {
+            // Restore the previous value in case the process has crashed.
+            updatePublisherState(Integer.parseInt(SystemProperties.get("rcs.publish.status", "1")));
+        } catch (NumberFormatException e) {
+            // do nothing and use the default.
+        }
         logger.debug("init finished");
     }
 
@@ -626,9 +634,9 @@ public class RcsStackAdaptor{
 
             mIsIniting = true;
 
-            Intent intent = new Intent(AlarmBroadcastReceiver.ACTION_RETRY_ALARM);
+            Intent intent = new Intent(ACTION_RETRY_ALARM);
             intent.putExtra("times", times);
-            intent.setClass(mContext, AlarmBroadcastReceiver.class);
+            intent.setPackage(mContext.getPackageName());
             mRetryAlarmIntent = PendingIntent.getBroadcast(mContext, 0, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT);
 
