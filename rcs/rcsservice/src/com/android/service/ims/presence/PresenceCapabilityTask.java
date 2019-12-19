@@ -28,25 +28,15 @@
 
 package com.android.service.ims.presence;
 
-import java.util.Set;
-import java.util.HashMap;
-import java.util.List;
-import java.util.ArrayList;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.app.PendingIntent;
-import android.content.IntentFilter;
 import android.os.RemoteException;
-import android.app.AlarmManager;
 import android.os.SystemClock;
 
-import com.android.ims.internal.uce.presence.PresCmdStatus;
-
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.RcsPresenceInfo;
-import com.android.ims.IRcsPresenceListener;
-
 import com.android.ims.internal.Logger;
+import com.android.ims.IRcsPresenceListener;
 import com.android.service.ims.TaskManager;
 
 /**

@@ -28,30 +28,23 @@
 
 package com.android.service.ims;
 
-import java.util.Set;
+import android.content.Context;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
+import android.os.Message;
+import android.telephony.PhoneNumberUtils;
+
+import com.android.ims.IRcsPresenceListener;
+import com.android.ims.internal.Logger;
+import com.android.service.ims.presence.PresenceAvailabilityTask;
+import com.android.service.ims.presence.PresenceCapabilityTask;
+import com.android.service.ims.presence.PresenceTask;
+
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.List;
-import java.util.ArrayList;
-import android.os.RemoteException;
-import android.content.Context;
-import android.os.Handler;
-import android.os.Message;
-import android.os.HandlerThread;
-import android.os.Looper;
-import android.telephony.PhoneNumberUtils;
-
-import com.android.ims.internal.uce.presence.PresCmdStatus;
-
-import com.android.ims.internal.Logger;
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.RcsPresenceInfo;
-import com.android.ims.IRcsPresenceListener;
-
-import com.android.service.ims.presence.PresenceTask;
-import com.android.service.ims.presence.PresenceCapabilityTask;
-import com.android.service.ims.presence.PresenceAvailabilityTask;
+import java.util.Set;
 
 /**
  * TaskManager
