@@ -39,8 +39,8 @@ import android.os.Looper;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.provider.Settings;
+import android.provider.Telephony;
 import android.telephony.AccessNetworkConstants;
-import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.ims.ImsException;
 import android.telephony.ims.ImsMmTelManager;
@@ -203,8 +203,8 @@ public class RcsService extends Service {
                 false, mObserver);
 
         mSiminfoSettingObserver = new SimInfoContentObserver();
-        getContentResolver().registerContentObserver(
-                SubscriptionManager.CONTENT_URI, false, mSiminfoSettingObserver);
+        getContentResolver().registerContentObserver(Telephony.SimInfo.CONTENT_URI, false,
+                mSiminfoSettingObserver);
 
         mRetryHandler = new Handler(Looper.getMainLooper());
         registerSubscriptionChangedListener();
@@ -229,54 +229,39 @@ public class RcsService extends Service {
             logger.warn("handleSubscriptionsChanged: SubscriptionManager is null!");
             return;
         }
-        List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
-        if (infos == null || infos.isEmpty()) {
-            // There are no active subscriptions right now.
+        int defaultVoiceSub = RcsSettingUtils.getDefaultSubscriptionId(this);
+        if (defaultVoiceSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
             handleImsServiceDown();
-        } else {
-            int defaultVoiceSub = SubscriptionManager.getDefaultVoiceSubscriptionId();
-            // Get default voice id and then try to register for IMS callbacks
-            if (defaultVoiceSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-                for (SubscriptionInfo info : infos) {
-                    if (!info.isOpportunistic()) {
-                        defaultVoiceSub = info.getSubscriptionId();
-                        break;
-                    }
-                }
-            }
-            if (defaultVoiceSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-                handleImsServiceDown();
+            return;
+        }
+
+        ImsMmTelManager mIms = ImsMmTelManager.createForSubscriptionId(defaultVoiceSub);
+        try {
+            if (defaultVoiceSub == mAssociatedSubscription) {
+                // Don't register duplicate callbacks for the same subscription.
                 return;
             }
-
-            ImsMmTelManager mIms = ImsMmTelManager.createForSubscriptionId(defaultVoiceSub);
-            try {
-                if (defaultVoiceSub == mAssociatedSubscription) {
-                    // Don't register duplicate callbacks for the same subscription.
-                    return;
-                }
-                if (mAssociatedSubscription != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-                    // Get rid of any existing registrations.
-                    ImsMmTelManager mOldIms = ImsMmTelManager.createForSubscriptionId(
-                            mAssociatedSubscription);
-                    mOldIms.unregisterImsRegistrationCallback(mImsRegistrationCallback);
-                    mOldIms.unregisterMmTelCapabilityCallback(mCapabilityCallback);
-                    logger.print("callbacks unregistered for sub " + mAssociatedSubscription);
-                }
-                // move over registrations.
-                mIms.registerImsRegistrationCallback(getMainExecutor(), mImsRegistrationCallback);
-                mIms.registerMmTelCapabilityCallback(getMainExecutor(), mCapabilityCallback);
-                mAssociatedSubscription = defaultVoiceSub;
-                logger.print("callbacks registered for sub " + mAssociatedSubscription);
-                handleImsServiceUp();
-            } catch (ImsException e) {
-                logger.info("Couldn't register callbacks for " + defaultVoiceSub + ": "
-                        + e.getMessage());
-                if (e.getCode() == ImsException.CODE_ERROR_SERVICE_UNAVAILABLE) {
-                    // IMS temporarily unavailable. Retry after a few seconds.
-                    mRetryHandler.removeCallbacks(mRegisterCallbacks);
-                    mRetryHandler.postDelayed(mRegisterCallbacks, IMS_SERVICE_RETRY_TIMEOUT_MS);
-                }
+            if (mAssociatedSubscription != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                // Get rid of any existing registrations.
+                ImsMmTelManager mOldIms = ImsMmTelManager.createForSubscriptionId(
+                        mAssociatedSubscription);
+                mOldIms.unregisterImsRegistrationCallback(mImsRegistrationCallback);
+                mOldIms.unregisterMmTelCapabilityCallback(mCapabilityCallback);
+                logger.print("callbacks unregistered for sub " + mAssociatedSubscription);
+            }
+            // move over registrations.
+            mIms.registerImsRegistrationCallback(getMainExecutor(), mImsRegistrationCallback);
+            mIms.registerMmTelCapabilityCallback(getMainExecutor(), mCapabilityCallback);
+            mAssociatedSubscription = defaultVoiceSub;
+            logger.print("callbacks registered for sub " + mAssociatedSubscription);
+            handleImsServiceUp();
+        } catch (ImsException e) {
+            logger.info("Couldn't register callbacks for " + defaultVoiceSub + ": "
+                    + e.getMessage());
+            if (e.getCode() == ImsException.CODE_ERROR_SERVICE_UNAVAILABLE) {
+                // IMS temporarily unavailable. Retry after a few seconds.
+                mRetryHandler.removeCallbacks(mRegisterCallbacks);
+                mRetryHandler.postDelayed(mRegisterCallbacks, IMS_SERVICE_RETRY_TIMEOUT_MS);
             }
         }
     }
