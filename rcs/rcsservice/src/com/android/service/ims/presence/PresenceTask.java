@@ -28,34 +28,28 @@
 
 package com.android.service.ims.presence;
 
-import com.android.ims.IRcsPresenceListener;
-import com.android.ims.internal.Logger;
-import com.android.service.ims.RcsUtils;
 import com.android.service.ims.Task;
 
 /**
  * PresenceTask
  */
-public class PresenceTask extends Task{
-    /*
-     * The logger
-     */
-    private Logger logger = Logger.getLogger(this.getClass().getName());
+public class PresenceTask extends Task {
 
     // filled before send the request to stack
     public String[] mContacts;
 
-    public PresenceTask(int taskId, int cmdId, IRcsPresenceListener listener, String[] contacts){
+    public PresenceTask(int taskId, int cmdId, ContactCapabilityResponse listener,
+            String[] contacts){
         super(taskId, cmdId, listener);
 
         mContacts = contacts;
         mListener = listener;
     }
 
-    public String toString(){
+    public String toString() {
         return "PresenceTask: mTaskId=" + mTaskId +
                 " mCmdId=" + mCmdId +
-                " mContacts=" + RcsUtils.toContactString(mContacts) +
+                " mContacts=" + PresenceUtils.toContactString(mContacts) +
                 " mCmdStatus=" + mCmdStatus +
                 " mSipRequestId=" + mSipRequestId +
                 " mSipResponseCode=" + mSipResponseCode +
