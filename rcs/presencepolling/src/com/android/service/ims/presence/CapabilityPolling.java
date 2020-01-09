@@ -56,7 +56,6 @@ import com.android.internal.telephony.TelephonyIntents;
 
 import com.android.ims.RcsException;
 import com.android.ims.RcsManager;
-import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.RcsPresence;
 import com.android.ims.RcsPresence.PublishState;
 import com.android.ims.RcsPresenceInfo;
