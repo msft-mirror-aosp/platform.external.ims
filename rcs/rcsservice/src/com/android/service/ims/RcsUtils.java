@@ -28,18 +28,10 @@
 
 package com.android.service.ims;
 
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.internal.Logger;
+import com.android.ims.ResultCode;
 import com.android.ims.internal.uce.common.StatusCode;
 
-public class RcsUtils{
-    /*
-     * The logger
-     */
-    static private Logger logger = Logger.getLogger("RcsUtils");
-
-    public RcsUtils() {
-    }
+public class RcsUtils {
 
     static public int statusCodeToResultCode(int sipStatusCode){
         if(sipStatusCode == StatusCode.UCE_SUCCESS ||
@@ -82,22 +74,6 @@ public class RcsUtils{
         }
 
         return ResultCode.SUBSCRIBE_GENERIC;
-    }
-
-    static public String toContactString(String[] contacts) {
-        if(contacts == null) {
-            return null;
-        }
-
-         String result = "";
-        for(int i=0; i<contacts.length; i++) {
-            result += contacts[i];
-            if(i != contacts.length -1) {
-                result += ";";
-            }
-        }
-
-        return result;
     }
 }
 

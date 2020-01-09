@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Motorola Mobility LLC
+ * Copyright (c) 2019, The Android Open Source Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -9,9 +9,9 @@
  *     - Redistributions in binary form must reproduce the above copyright
  *       notice, this list of conditions and the following disclaimer in the
  *       documentation and/or other materials provided with the distribution.
- *     - Neither the name of Motorola Mobility nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
+ *     - Neither the name of The Android Open Source Project nor the names of its contributors may
+ *       be used to endorse or promote products derived from this software
+ *       without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
@@ -28,46 +28,44 @@
 
 package com.android.service.ims.presence;
 
-import com.android.ims.internal.Logger;
+import android.net.Uri;
+import android.text.TextUtils;
 
-/**
- * PresenceAvailabilityTask
- */
-public class PresenceAvailabilityTask extends PresenceTask{
-    /*
-     * The logger
-     */
-    private Logger logger = Logger.getLogger(this.getClass().getName());
+public class PresenceUtils {
 
-    private long mCreateTimestamp = 0;
+    public static final String LOG_TAG_PREFIX = "rcs_lib";
 
-    // Time when get the notify. Used to check the 60s expires.
-    private long mNotifyTimeStamp = 0;
+    private static final String TEL_SCHEME = "tel:";
 
-    public PresenceAvailabilityTask(int taskId, int cmdId, ContactCapabilityResponse listener,
-            String[] contacts){
-        super(taskId, cmdId, listener, contacts);
+    public static String toContactString(String[] contacts) {
+        if(contacts == null) {
+            return null;
+        }
 
-        mCreateTimestamp = System.currentTimeMillis();
-        mNotifyTimeStamp = 0;
+        String result = "";
+        for(int i=0; i<contacts.length; i++) {
+            result += contacts[i];
+            if(i != contacts.length -1) {
+                result += ";";
+            }
+        }
+
+        return result;
     }
 
-    public void updateNotifyTimestamp() {
-        mNotifyTimeStamp = System.currentTimeMillis();
-        logger.debug("updateNotifyTimestamp mNotifyTimeStamp=" + mNotifyTimeStamp);
+    public static Uri convertContactNumber(String number) {
+        if (TextUtils.isEmpty(number)) return null;
+        Uri possibleNumber = Uri.parse(number);
+        // already in the  correct format
+        if (TEL_SCHEME.equals(possibleNumber.getScheme())) {
+            return possibleNumber;
+        }
+        // need to append tel scheme
+        return Uri.fromParts(TEL_SCHEME, number, null);
     }
 
-    public long getNotifyTimestamp() {
-        return mNotifyTimeStamp;
+    public static String getNumber(Uri numberUri) {
+        if (numberUri == null) return null;
+        return numberUri.getSchemeSpecificPart();
     }
-
-    public long getCreateTimestamp() {
-        return mCreateTimestamp;
-    }
-
-    public String toString(){
-        return super.toString() +
-                " mNotifyTimeStamp=" + mNotifyTimeStamp;
-    }
-};
-
+}

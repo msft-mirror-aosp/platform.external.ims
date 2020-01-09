@@ -35,17 +35,14 @@ java_library {
     srcs: [
         "src/com/android/service/ims/presence/*.java",
         "src/com/android/service/ims/RcsSettingUtils.java",
-        "src/com/android/service/ims/RcsUtils.java",
         "src/com/android/service/ims/Task.java",
         "src/com/android/service/ims/TaskManager.java",
-        // Move the following to the app once the dependencies have been decoupled.
-        "src/com/android/service/ims/RcsStackAdaptor.java"
+        ":rcsmanager-utils"
     ],
     libs: [
         "telephony-common",
         "ims-common",
     ],
-    static_libs: ["com.android.ims.rcsmanager"]
 }
 
 android_app {
@@ -54,13 +51,19 @@ android_app {
     platform_apis: true,
     // Only compile source java files in this apk.
     srcs: [
+        "src/com/android/service/ims/AlarmBroadcastReceiver.java",
         "src/com/android/service/ims/DeviceShutdown.java",
         "src/com/android/service/ims/LauncherUtils.java",
+        "src/com/android/service/ims/PresenceInfoParser.java",
         "src/com/android/service/ims/RcsService.java",
-        "src/com/android/service/ims/RcsServiceApp.java"
+        "src/com/android/service/ims/RcsServiceApp.java",
+        "src/com/android/service/ims/RcsStackAdaptor.java",
+        "src/com/android/service/ims/RcsUtils.java",
+        "src/com/android/service/ims/StackListener.java"
     ],
     static_libs: [
-        "ucepresencelib"
+        "ucepresencelib",
+        "com.android.ims.rcsmanager"
     ],
     certificate: "platform",
 }
