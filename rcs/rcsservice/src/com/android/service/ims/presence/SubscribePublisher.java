@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Motorola Mobility LLC
+ * Copyright (c) 2019, The Android Open Source Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -9,9 +9,9 @@
  *     - Redistributions in binary form must reproduce the above copyright
  *       notice, this list of conditions and the following disclaimer in the
  *       documentation and/or other materials provided with the distribution.
- *     - Neither the name of Motorola Mobility nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
+ *     - Neither the name of The Android Open Source Project nor the names of its contributors may
+ *       be used to endorse or promote products derived from this software
+ *       without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
@@ -28,46 +28,26 @@
 
 package com.android.service.ims.presence;
 
-import com.android.ims.internal.Logger;
+public interface SubscribePublisher {
 
-/**
- * PresenceAvailabilityTask
- */
-public class PresenceAvailabilityTask extends PresenceTask{
-    /*
-     * The logger
+    /**
+     * Request the Capabilities for the requested contacts associated with a taskId.
      */
-    private Logger logger = Logger.getLogger(this.getClass().getName());
+    int requestCapability(String[] formatedContacts, int taskId);
 
-    private long mCreateTimestamp = 0;
+    /**
+     * Request the Capabilities for the requested contacts associated with a taskId.
+     */
+    int requestAvailability(String formattedContact, int taskId);
 
-    // Time when get the notify. Used to check the 60s expires.
-    private long mNotifyTimeStamp = 0;
+    /**
+     * @return the current state of the RCS stack.
+     */
+    int getStackStatusForCapabilityRequest();
 
-    public PresenceAvailabilityTask(int taskId, int cmdId, ContactCapabilityResponse listener,
-            String[] contacts){
-        super(taskId, cmdId, listener, contacts);
+    /**==
+     * Notify the stack of the last publish or subscribe request result.
+     */
+    void updatePublisherState(@PresenceBase.PresencePublishState int publishState);
 
-        mCreateTimestamp = System.currentTimeMillis();
-        mNotifyTimeStamp = 0;
-    }
-
-    public void updateNotifyTimestamp() {
-        mNotifyTimeStamp = System.currentTimeMillis();
-        logger.debug("updateNotifyTimestamp mNotifyTimeStamp=" + mNotifyTimeStamp);
-    }
-
-    public long getNotifyTimestamp() {
-        return mNotifyTimeStamp;
-    }
-
-    public long getCreateTimestamp() {
-        return mCreateTimestamp;
-    }
-
-    public String toString(){
-        return super.toString() +
-                " mNotifyTimeStamp=" + mNotifyTimeStamp;
-    }
-};
-
+}

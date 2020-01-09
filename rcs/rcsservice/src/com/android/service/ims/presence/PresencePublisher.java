@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Motorola Mobility LLC
+ * Copyright (c) 2019, The Android Open Source Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -9,9 +9,9 @@
  *     - Redistributions in binary form must reproduce the above copyright
  *       notice, this list of conditions and the following disclaimer in the
  *       documentation and/or other materials provided with the distribution.
- *     - Neither the name of Motorola Mobility nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
+ *     - Neither the name of The Android Open Source Project nor the names of its contributors may
+ *       be used to endorse or promote products derived from this software
+ *       without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
@@ -28,38 +28,24 @@
 
 package com.android.service.ims.presence;
 
-/**
- * PresencePublishTask
- */
-public class PresencePublishTask extends PresenceTask{
+import android.telephony.ims.RcsContactUceCapability;
 
-    private long mCreateTimestamp = 0;
+public interface PresencePublisher {
 
-    private int mRetryCount = 0;
+    /**
+     * Notify the stack of the last publish request result.
+     */
+    @PresenceBase.PresencePublishState int getPublisherState();
 
-    public PresencePublishTask(int taskId, int cmdId, ContactCapabilityResponse listener,
-            String[] contacts){
-        super(taskId, cmdId, listener, contacts);
+    /**
+     * Request that the specified capabilities are published to the network.
+     * @param capabilities The capabilities to publish.
+     * @return the result of requesting that the capabilities are published.
+     */
+    int requestPublication(RcsContactUceCapability capabilities);
 
-        mCreateTimestamp = System.currentTimeMillis();
-    }
-
-    public long getCreateTimestamp() {
-        return mCreateTimestamp;
-    }
-
-    public int getRetryCount() {
-        return mRetryCount;
-    }
-
-    public void setRetryCount(int retryCount) {
-        mRetryCount = retryCount;
-    }
-
-    public String toString(){
-        return super.toString() +
-                " mCreateTimestamp=" + mCreateTimestamp +
-                " mRetryCount=" + mRetryCount;
-    }
-};
-
+    /**
+     * Notify the stack of the last publish or subscribe request result.
+     */
+    void updatePublisherState(@PresenceBase.PresencePublishState int publishState);
+}
