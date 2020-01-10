@@ -31,82 +31,131 @@ package com.android.service.ims;
 import android.content.Context;
 import android.os.PersistableBundle;
 import android.telephony.CarrierConfigManager;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
+import android.telephony.ims.ProvisioningManager;
+import android.telephony.ims.feature.MmTelFeature;
+import android.telephony.ims.stub.ImsRegistrationImplBase;
 
-import com.android.ims.ImsConfig;
-import com.android.ims.ImsException;
-import com.android.ims.ImsManager;
 import com.android.ims.internal.Logger;
 
-public class RcsSettingUtils{
-    /*
-     * The logger
-     */
+import java.util.List;
+
+public class RcsSettingUtils {
     static private Logger logger = Logger.getLogger("RcsSettingUtils");
 
-    public RcsSettingUtils() {
-    }
-
-    public static boolean isFeatureProvisioned(Context context,
-            int featureId, boolean defaultValue) {
-        CarrierConfigManager configManager = (CarrierConfigManager)
-                context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        // Don't need provision.
-        if (configManager != null) {
-            PersistableBundle config = configManager.getConfig();
-            if (config != null && !config.getBoolean(
-                    CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL)) {
-                return true;
-            }
-        }
-
-        boolean provisioned = defaultValue;
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    provisioned = imsConfig.getProvisionedValue(featureId)
-                            == ImsConfig.FeatureValueConstants.ON;
-                }
-            } catch (ImsException ex) {
-            }
-        }
-
-        logger.debug("featureId=" + featureId + " provisioned=" + provisioned);
-        return provisioned;
-    }
+    // Values taken from ImsConfig - Should define in @SystemApi as well.
+    /**
+     * SIP T1 timer value in milliseconds. See RFC 3261 for definition.
+     * Value is in Integer format.
+     */
+    private static final int SIP_T1_TIMER = 7;
+    /**
+     * Whether or not capability discovery is provisioned.
+     */
+    private static final int CAPABILITY_DISCOVERY_ENABLED = 17;
+    /**
+     * period of time the availability information of a contact is cached on device.
+     * Value is in Integer format.
+     */
+    private static final int AVAILABILITY_CACHE_EXPIRATION = 19;
+    /**
+     * Minimum time between two published messages from the device.
+     * Value is in Integer format.
+     */
+    private static final int SOURCE_THROTTLE_PUBLISH = 21;
+    /**
+     * The Maximum number of MDNs contained in one Request Contained List.
+     * Value is in Integer format.
+     */
+    private static final int MAX_NUMENTRIES_IN_RCL = 22;
+    /**
+     * Expiration timer for subscription of a Request Contained List, used in capability
+     * polling.
+     * Value is in Integer format.
+     */
+    private static final int CAPAB_POLL_LIST_SUB_EXP = 23;
+    /**
+     * Provisioning status for Enhanced Address Book (EAB)
+     * Value is in Integer format.
+     */
+    private static final int EAB_SETTING_ENABLED = 25;
+    /**
+     * Whether or not mobile data is enabled currently.
+     */
+    private static final int MOBILE_DATA_ENABLED = 29;
 
     public static boolean isVowifiProvisioned(Context context) {
-        return isFeatureProvisioned(context,
-                ImsConfig.ConfigConstants.VOICE_OVER_WIFI_SETTING_ENABLED, false);
+        try {
+            boolean isProvisioned;
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            isProvisioned = manager.getProvisioningStatusForCapability(
+                    MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                    ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN);
+            logger.debug("isVowifiProvisioned=" + isProvisioned);
+            return isProvisioned;
+        } catch (Exception e) {
+            logger.debug("isVowifiProvisioned, exception = " + e.getMessage());
+            return false;
+        }
     }
 
     public static boolean isLvcProvisioned(Context context) {
-        return isFeatureProvisioned(context,
-                ImsConfig.ConfigConstants.LVC_SETTING_ENABLED, false);
+        try {
+            boolean isProvisioned;
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            isProvisioned = manager.getProvisioningStatusForCapability(
+                    MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VIDEO,
+                    ImsRegistrationImplBase.REGISTRATION_TECH_LTE);
+            logger.debug("isLvcProvisioned=" + isProvisioned);
+            return isProvisioned;
+        } catch (Exception e) {
+            logger.debug("isLvcProvisioned, exception = " + e.getMessage());
+            return false;
+        }
     }
 
     public static boolean isEabProvisioned(Context context) {
-        return isFeatureProvisioned(context,
-                ImsConfig.ConfigConstants.EAB_SETTING_ENABLED, false);
+        boolean isProvisioned = false;
+        int subId = getDefaultSubscriptionId(context);
+        if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+            logger.debug("isEabProvisioned: no valid subscriptions!");
+            return false;
+        }
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        if (configManager != null) {
+            PersistableBundle config = configManager.getConfigForSubId(subId);
+            if (config != null && !config.getBoolean(
+                    CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL)) {
+                // If we don't need provisioning, just return true.
+                return true;
+            }
+        }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
+            isProvisioned = manager.getProvisioningIntValue(EAB_SETTING_ENABLED)
+                    == ProvisioningManager.PROVISIONING_VALUE_ENABLED;
+        } catch (Exception e) {
+            logger.debug("isEabProvisioned: exception=" + e.getMessage());
+        }
+        logger.debug("isEabProvisioned=" + isProvisioned);
+        return isProvisioned;
     }
 
     public static int getSIPT1Timer(Context context) {
         int sipT1Timer = 0;
-
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    sipT1Timer = imsConfig.getProvisionedValue(
-                            ImsConfig.ConfigConstants.SIP_T1_TIMER);
-                }
-            } catch (ImsException ex) {
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            sipT1Timer = manager.getProvisioningIntValue(SIP_T1_TIMER);
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("getSIPT1Timer: exception=" + e.getMessage());
         }
-
-        logger.debug("sipT1Timer=" + sipT1Timer);
+        logger.debug("getSIPT1Timer=" + sipT1Timer);
         return sipT1Timer;
     }
 
@@ -115,20 +164,15 @@ public class RcsSettingUtils{
      */
     public static boolean getCapabilityDiscoveryEnabled(Context context) {
         boolean capabilityDiscoveryEnabled = false;
-
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    capabilityDiscoveryEnabled = imsConfig.getProvisionedValue(
-                            ImsConfig.ConfigConstants.CAPABILITY_DISCOVERY_ENABLED)
-                            == ImsConfig.FeatureValueConstants.ON;
-                }
-            } catch (ImsException ex) {
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            capabilityDiscoveryEnabled = manager.getProvisioningIntValue(CAPABILITY_DISCOVERY_ENABLED)
+                    == ProvisioningManager.PROVISIONING_VALUE_ENABLED;
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("capabilityDiscoveryEnabled: exception=" + e.getMessage());
         }
-
         logger.debug("capabilityDiscoveryEnabled=" + capabilityDiscoveryEnabled);
         return capabilityDiscoveryEnabled;
     }
@@ -138,20 +182,15 @@ public class RcsSettingUtils{
      */
     public static int getMaxNumbersInRCL(Context context) {
         int maxNumbersInRCL = 100;
-
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    maxNumbersInRCL = imsConfig.getProvisionedValue(
-                            ImsConfig.ConfigConstants.MAX_NUMENTRIES_IN_RCL);
-                }
-            } catch (ImsException ex) {
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            maxNumbersInRCL = manager.getProvisioningIntValue(MAX_NUMENTRIES_IN_RCL);
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("getMaxNumbersInRCL: exception=" + e.getMessage());
         }
-
-        logger.debug("maxNumbersInRCL=" + maxNumbersInRCL);
+        logger.debug("getMaxNumbersInRCL=" + maxNumbersInRCL);
         return maxNumbersInRCL;
     }
 
@@ -160,98 +199,100 @@ public class RcsSettingUtils{
      */
     public static int getCapabPollListSubExp(Context context) {
         int capabPollListSubExp = 30;
-
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    capabPollListSubExp = imsConfig.getProvisionedValue(
-                            ImsConfig.ConfigConstants.CAPAB_POLL_LIST_SUB_EXP);
-                }
-            } catch (ImsException ex) {
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            capabPollListSubExp = manager.getProvisioningIntValue(CAPAB_POLL_LIST_SUB_EXP);
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("getCapabPollListSubExp: exception=" + e.getMessage());
         }
-
-        logger.debug("capabPollListSubExp=" + capabPollListSubExp);
+        logger.debug("getCapabPollListSubExp=" + capabPollListSubExp);
         return capabPollListSubExp;
     }
 
     /**
-     * Peiod of time the availability information of a contact is cached on device.
+     * Period of time the availability information of a contact is cached on device.
      */
     public static int getAvailabilityCacheExpiration(Context context) {
         int availabilityCacheExpiration = 30;
-
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    availabilityCacheExpiration = imsConfig.getProvisionedValue(
-                            ImsConfig.ConfigConstants.AVAILABILITY_CACHE_EXPIRATION);
-                }
-            } catch (ImsException ex) {
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            availabilityCacheExpiration = manager.getProvisioningIntValue(
+                    AVAILABILITY_CACHE_EXPIRATION);
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("getAvailabilityCacheExpiration: exception=" + e.getMessage());
         }
-
-        logger.debug("availabilityCacheExpiration=" + availabilityCacheExpiration);
+        logger.debug("getAvailabilityCacheExpiration=" + availabilityCacheExpiration);
         return availabilityCacheExpiration;
     }
 
     public static boolean isMobileDataEnabled(Context context) {
         boolean mobileDataEnabled = false;
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    mobileDataEnabled = imsConfig.getProvisionedValue(
-                            ImsConfig.ConfigConstants.MOBILE_DATA_ENABLED)
-                            == ImsConfig.FeatureValueConstants.ON;
-                }
-            } catch (ImsException ex) {
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            mobileDataEnabled = manager.getProvisioningIntValue(MOBILE_DATA_ENABLED)
+                    == ProvisioningManager.PROVISIONING_VALUE_ENABLED;
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("isMobileDataEnabled: exception=" + e.getMessage());
         }
-
         logger.debug("mobileDataEnabled=" + mobileDataEnabled);
         return mobileDataEnabled;
     }
 
     public static void setMobileDataEnabled(Context context, boolean mobileDataEnabled) {
         logger.debug("mobileDataEnabled=" + mobileDataEnabled);
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    imsConfig.setProvisionedValue(
-                            ImsConfig.ConfigConstants.MOBILE_DATA_ENABLED, mobileDataEnabled?
-                            ImsConfig.FeatureValueConstants.ON:ImsConfig.FeatureValueConstants.OFF);
-                }
-            } catch (ImsException ex) {
-                logger.debug("ImsException", ex);
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            manager.setProvisioningIntValue(MOBILE_DATA_ENABLED, mobileDataEnabled ?
+                    ProvisioningManager.PROVISIONING_VALUE_ENABLED :
+                    ProvisioningManager.PROVISIONING_VALUE_DISABLED);
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("mobileDataEnabled: exception=" + e.getMessage());
         }
     }
 
     public static int getPublishThrottle(Context context) {
+        // Default
         int publishThrottle = 60000;
-
-        ImsManager imsManager = ImsManager.getInstance(context, 0);
-        if (imsManager != null) {
-            try {
-                ImsConfig imsConfig = imsManager.getConfigInterface();
-                if (imsConfig != null) {
-                    publishThrottle = imsConfig.getProvisionedValue(
-                            ImsConfig.ConfigConstants.SOURCE_THROTTLE_PUBLISH);
-                }
-            } catch (ImsException ex) {
-            }
+        try {
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            publishThrottle = manager.getProvisioningIntValue(SOURCE_THROTTLE_PUBLISH);
+        } catch (Exception e) {
+            // If there is no active subscriptions, this will throw an exception.
+            logger.debug("publishThrottle: exception=" + e.getMessage());
         }
-
         logger.debug("publishThrottle=" + publishThrottle);
         return publishThrottle;
+    }
+
+    private static int getDefaultSubscriptionId(Context context) {
+        SubscriptionManager sm = context.getSystemService(SubscriptionManager.class);
+        List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
+        if (infos == null || infos.isEmpty()) {
+            // There are no active subscriptions right now.
+            return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+        }
+        // This code does not support MSIM unfortunately, so only provide presence on the default
+        // subscription that the user chose.
+        int defaultSub = SubscriptionManager.getDefaultSubscriptionId();
+        // If the user has no default set, just pick the first as backup.
+        if (defaultSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+            for (SubscriptionInfo info : infos) {
+                if (!info.isOpportunistic()) {
+                    defaultSub = info.getSubscriptionId();
+                    break;
+                }
+            }
+        }
+        return defaultSub;
     }
 }
 

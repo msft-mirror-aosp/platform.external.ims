@@ -29,6 +29,7 @@
 package com.android.service.ims;
 
 import android.app.Service;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
@@ -44,20 +45,26 @@ import android.telephony.SubscriptionManager;
 import android.telephony.ims.ImsException;
 import android.telephony.ims.ImsMmTelManager;
 import android.telephony.ims.ImsReasonInfo;
+import android.telephony.ims.RcsContactUceCapability;
 import android.telephony.ims.RegistrationManager;
 import android.telephony.ims.feature.MmTelFeature;
 
 import com.android.ims.IRcsPresenceListener;
-import com.android.ims.RcsManager.ResultCode;
+import com.android.ims.RcsPresenceInfo;
+import com.android.ims.ResultCode;
+import com.android.ims.RcsPresence;
 import com.android.ims.internal.IRcsPresence;
 import com.android.ims.internal.IRcsService;
 import com.android.ims.internal.Logger;
-import com.android.internal.telephony.IccCardConstants;
 import com.android.service.ims.R;
+import com.android.service.ims.presence.ContactCapabilityResponse;
+import com.android.service.ims.presence.PresenceBase;
 import com.android.service.ims.presence.PresencePublication;
 import com.android.service.ims.presence.PresenceSubscriber;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class RcsService extends Service {
 
@@ -82,6 +89,78 @@ public class RcsService extends Service {
             registerImsCallbacksAndSetAssociatedSubscription();
         }
     };
+
+    private class CapabilityResultListener implements ContactCapabilityResponse {
+
+        private final IRcsPresenceListener mListener;
+
+        public CapabilityResultListener(IRcsPresenceListener listener) {
+            mListener = listener;
+        }
+
+        @Override
+        public void onSuccess(int reqId) {
+            try {
+                mListener.onSuccess(reqId);
+            } catch (RemoteException e) {
+                logger.warn("CapabilityResultListener: onSuccess exception = " + e.getMessage());
+            }
+        }
+
+        @Override
+        public void onError(int reqId, int resultCode) {
+            try {
+                mListener.onError(reqId, resultCode);
+            } catch (RemoteException e) {
+                logger.warn("CapabilityResultListener: onError exception = " + e.getMessage());
+            }
+        }
+
+        @Override
+        public void onFinish(int reqId) {
+            try {
+                mListener.onFinish(reqId);
+            } catch (RemoteException e) {
+                logger.warn("CapabilityResultListener: onFinish exception = " + e.getMessage());
+            }
+        }
+
+        @Override
+        public void onTimeout(int reqId) {
+            try {
+                mListener.onTimeout(reqId);
+            } catch (RemoteException e) {
+                logger.warn("CapabilityResultListener: onTimeout exception = " + e.getMessage());
+            }
+        }
+
+        @Override
+        public void onCapabilitiesUpdated(List<RcsContactUceCapability> contactCapabilities,
+                boolean updateLastTimestamp) {
+            ArrayList<RcsPresenceInfo> presenceInfoList = contactCapabilities.stream().map(
+                    PresenceInfoParser::getRcsPresenceInfo).collect(
+                    Collectors.toCollection(ArrayList::new));
+
+            logger.debug("capabilities updated:");
+            for (RcsPresenceInfo info : presenceInfoList) {
+                logger.debug("capabilities updated: info -" + info);
+            }
+            // For some reason it uses an intent to send this info back instead of just using the
+            // active binder...
+            Intent intent = new Intent(RcsPresence.ACTION_PRESENCE_CHANGED);
+            intent.putParcelableArrayListExtra(RcsPresence.EXTRA_PRESENCE_INFO_LIST,
+                    presenceInfoList);
+            intent.putExtra("updateLastTimestamp", updateLastTimestamp);
+            launchPersistService(intent);
+        }
+    }
+
+    private void launchPersistService(Intent intent) {
+        ComponentName component = new ComponentName("com.android.service.ims.presence",
+                "com.android.service.ims.presence.PersistService");
+        intent.setComponent(component);
+        startService(intent);
+    }
 
     @Override
     public void onCreate() {
@@ -266,7 +345,8 @@ public class RcsService extends Service {
                 return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
             }
 
-            return mSubscriber.requestCapability(contactsNumber, listener);
+            return mSubscriber.requestCapability(contactsNumber,
+                    new CapabilityResultListener(listener));
          }
 
         /**
@@ -287,7 +367,8 @@ public class RcsService extends Service {
             }
 
             // check availability cache (in RAM).
-            return mSubscriber.requestAvailability(contactNumber, listener, false);
+            return mSubscriber.requestAvailability(contactNumber,
+                    new CapabilityResultListener(listener), false);
         }
 
         /**
@@ -309,11 +390,12 @@ public class RcsService extends Service {
             }
 
             // check availability cache (in RAM).
-            return mSubscriber.requestAvailability(contactNumber, listener, true);
+            return mSubscriber.requestAvailability(contactNumber,
+                    new CapabilityResultListener(listener), true);
         }
 
         public int getPublishState() throws RemoteException {
-            return mPublication.getPublishState();
+            return publisherPublishStateToPublishState(mPublication.getPublishState());
         }
     };
 
@@ -448,5 +530,24 @@ public class RcsService extends Service {
             mPublication.onFeatureCapabilityChanged(mNetworkRegistrationType, capabilities);
         }
     };
+
+    private static int publisherPublishStateToPublishState(int publisherPublishState) {
+        switch(publisherPublishState) {
+            case PresenceBase.PUBLISH_STATE_200_OK:
+                return RcsPresence.PublishState.PUBLISH_STATE_200_OK;
+            case PresenceBase.PUBLISH_STATE_NOT_PUBLISHED:
+                return RcsPresence.PublishState.PUBLISH_STATE_NOT_PUBLISHED;
+            case PresenceBase.PUBLISH_STATE_VOLTE_PROVISION_ERROR:
+                return RcsPresence.PublishState.PUBLISH_STATE_VOLTE_PROVISION_ERROR;
+            case PresenceBase.PUBLISH_STATE_RCS_PROVISION_ERROR:
+                return RcsPresence.PublishState.PUBLISH_STATE_RCS_PROVISION_ERROR;
+            case PresenceBase.PUBLISH_STATE_REQUEST_TIMEOUT:
+                return RcsPresence.PublishState.PUBLISH_STATE_REQUEST_TIMEOUT;
+            case PresenceBase.PUBLISH_STATE_OTHER_ERROR:
+                return RcsPresence.PublishState.PUBLISH_STATE_OTHER_ERROR;
+
+        }
+        return PresenceBase.PUBLISH_STATE_OTHER_ERROR;
+    }
 }
 

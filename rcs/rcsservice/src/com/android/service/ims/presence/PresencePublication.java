@@ -28,45 +28,39 @@
 
 package com.android.service.ims.presence;
 
-import java.util.Arrays;
-
+import android.annotation.IntDef;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import com.android.internal.telephony.Phone;
+import android.content.IntentFilter;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Message;
+import android.os.SystemClock;
 import android.provider.Settings;
-import android.os.SystemProperties;
-import android.content.BroadcastReceiver;
+import android.telecom.PhoneAccount;
+import android.telecom.TelecomManager;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-
-import android.telecom.TelecomManager;
-import android.content.IntentFilter;
-import android.app.PendingIntent;
-import android.app.AlarmManager;
-import android.os.SystemClock;
-import android.os.Message;
-import android.os.Handler;
+import android.telephony.ims.RcsContactUceCapability;
 import android.telephony.ims.feature.MmTelFeature;
 
-
-import com.android.ims.ImsManager;
-import com.android.ims.ImsServiceClass;
 import com.android.ims.ImsConfig;
+import com.android.ims.ImsManager;
+import com.android.ims.ResultCode;
 import com.android.ims.internal.Logger;
-import com.android.ims.internal.uce.presence.PresPublishTriggerType;
-import com.android.ims.internal.uce.presence.PresSipResponse;
-import com.android.ims.internal.uce.presence.PresCmdStatus;
-import com.android.ims.RcsPresenceInfo;
-import com.android.ims.IRcsPresenceListener;
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.RcsPresence.PublishState;
 import com.android.internal.telephony.IccCardConstants;
+import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.service.ims.RcsSettingUtils;
-import com.android.service.ims.RcsStackAdaptor;
 import com.android.service.ims.Task;
 import com.android.service.ims.TaskManager;
+
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 
 public class PresencePublication extends PresenceBase {
     private Logger logger = Logger.getLogger(this.getClass().getName());
@@ -88,37 +82,11 @@ public class PresencePublication extends PresenceBase {
     volatile PublishRequest mPublishedRequest = null;
 
     /*
-     * Message to notify for a publish
+     * Message sent to mMsgHandler when there is a new request to Publish capabilities.
      */
-    public static final int MESSAGE_RCS_PUBLISH_REQUEST = 1;
+    private static final int MESSAGE_RCS_PUBLISH_REQUEST = 1;
 
-    /**
-     *  Publisher Error base
-     */
-    public static final int PUBLISH_ERROR_CODE_START = ResultCode.SUBSCRIBER_ERROR_CODE_END;
-
-    /**
-     * All publish errors not covered by specific errors
-     */
-    public static final int PUBLISH_GENIRIC_FAILURE = PUBLISH_ERROR_CODE_START - 1;
-
-    /**
-     * Responding for 403 - not authorized
-     */
-    public static final int PUBLISH_NOT_AUTHORIZED_FOR_PRESENCE = PUBLISH_ERROR_CODE_START - 2;
-
-    /**
-     * Responding for 404 error code. The subscriber is not provisioned.
-     * The Client should not send any EAB traffic after get this error.
-     */
-    public static final int PUBLISH_NOT_PROVISIONED = PUBLISH_ERROR_CODE_START - 3;
-
-    /**
-     * Responding for 200 - OK
-     */
-    public static final int PUBLISH_SUCESS = ResultCode.SUCCESS;
-
-    private RcsStackAdaptor mRcsStackAdaptor = null;
+    private PresencePublisher mPresencePublisher;
     private PresenceSubscriber mSubscriber = null;
     static private PresencePublication sPresencePublication = null;
     private BroadcastReceiver mReceiver = null;
@@ -135,7 +103,43 @@ public class PresencePublication extends PresenceBase {
     private final String[] mConfigVolteProvisionErrorOnPublishResponse;
     private final String[] mConfigRcsProvisionErrorOnPublishResponse;
 
-    public class PublishType{
+    /** ETag expired. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_ETAG_EXPIRED = 0;
+    /** Move to LTE with VoPS disabled. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_DISABLED = 1;
+    /** Move to LTE with VoPS enabled. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_ENABLED = 2;
+    /** Move to eHRPD. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_EHRPD = 3;
+    /** Move to HSPA+. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_HSPAPLUS = 4;
+    /** Move to 3G. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_3G = 5;
+    /** Move to 2G. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_2G = 6;
+    /** Move to WLAN */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_WLAN = 7;
+    /** Move to IWLAN */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_IWLAN = 8;
+    /** Trigger is unknown. */
+    public static final int UCE_PRES_PUBLISH_TRIGGER_UNKNOWN = 9;
+
+    @IntDef(value = {
+            UCE_PRES_PUBLISH_TRIGGER_ETAG_EXPIRED,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_DISABLED,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_ENABLED,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_EHRPD,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_HSPAPLUS,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_3G,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_2G,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_WLAN,
+            UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_IWLAN,
+            UCE_PRES_PUBLISH_TRIGGER_UNKNOWN
+    }, prefix="UCE_PRES_PUBLISH_TRIGGER_")
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface StackPublishTriggerType {}
+
+    public class PublishType {
         public static final int PRES_PUBLISH_TRIGGER_DATA_CHANGED = 0;
         // the lower layer should send trigger when enable volte
         // the lower layer should unpublish when disable volte
@@ -147,17 +151,12 @@ public class PresencePublication extends PresenceBase {
         public static final int PRES_PUBLISH_TRIGGER_FEATURE_AVAILABILITY_CHANGED = 5;
     };
 
-    /**
-     * @param rcsStackAdaptor
-     * @param context
-     */
-    public PresencePublication(RcsStackAdaptor rcsStackAdaptor, Context context,
+    public PresencePublication(PresencePublisher presencePublisher, Context context,
             String[] configVolteProvisionErrorOnPublishResponse,
             String[] configRcsProvisionErrorOnPublishResponse) {
-        super();
+        super(context);
         logger.debug("PresencePublication constrcuct");
-        this.mRcsStackAdaptor = rcsStackAdaptor;
-        this.mContext = context;
+        this.mPresencePublisher = presencePublisher;
         mConfigVolteProvisionErrorOnPublishResponse = configVolteProvisionErrorOnPublishResponse;
         mConfigRcsProvisionErrorOnPublishResponse = configRcsProvisionErrorOnPublishResponse;
 
@@ -175,12 +174,6 @@ public class PresencePublication extends PresenceBase {
                 Settings.Secure.PREFERRED_TTY_MODE,
                 Phone.TTY_MODE_OFF);
         logger.debug("The current TTY mode is: " + mPreferredTtyMode);
-
-        if(mRcsStackAdaptor != null){
-            mRcsStackAdaptor.setPublishState(
-                    SystemProperties.getInt("rcs.publish.status",
-                    PublishState.PUBLISH_STATE_NOT_PUBLISHED));
-        }
 
         mReceiver = new BroadcastReceiver() {
             @Override
@@ -214,7 +207,7 @@ public class PresencePublication extends PresenceBase {
                                          // treate hot SIM hot swap as power on.
                                          mDonotRetryUntilPowerCycle = false;
                                          if(mHasCachedTrigger) {
-                                             invokePublish(PresencePublication.PublishType.
+                                             requestLocalPublish(PublishType.
                                                      PRES_PUBLISH_TRIGGER_CACHED_TRIGGER);
                                          }
                                          break;
@@ -235,16 +228,14 @@ public class PresencePublication extends PresenceBase {
                         // only reset when the SIM gets absent.
                         reset();
                         mSimLoaded = false;
-                        setPublishState(
-                                PublishState.PUBLISH_STATE_NOT_PUBLISHED);
+                        setPublishState(PUBLISH_STATE_NOT_PUBLISHED);
                     }
                 }else if(Intent.ACTION_AIRPLANE_MODE_CHANGED.equalsIgnoreCase(intent.getAction())){
                     boolean airplaneMode = intent.getBooleanExtra("state", false);
                     if(airplaneMode){
                         logger.print("Airplane mode, set to PUBLISH_STATE_NOT_PUBLISHED");
                         reset();
-                        setPublishState(
-                                PublishState.PUBLISH_STATE_NOT_PUBLISHED);
+                        setPublishState(PUBLISH_STATE_NOT_PUBLISHED);
                     }
                 }else if(TelecomManager.ACTION_TTY_PREFERRED_MODE_CHANGED.equalsIgnoreCase(
                         intent.getAction())){
@@ -261,7 +252,7 @@ public class PresencePublication extends PresenceBase {
                     if (mIsTtyEnabled != isTtyEnabled) {
                         logger.print("ttyEnabled status changed from " + mIsTtyEnabled
                                 + " to " + isTtyEnabled);
-                        invokePublish(PresencePublication.PublishType.
+                        requestLocalPublish(PublishType.
                                 PRES_PUBLISH_TRIGGER_TTY_ENABLE_STATUS);
                     }
                 } else if(ImsConfig.ACTION_IMS_FEATURE_CHANGED.equalsIgnoreCase(
@@ -421,7 +412,7 @@ public class PresencePublication extends PresenceBase {
             logger.debug("provisioned, set mDonotRetryUntilPowerCycle to false");
             mDonotRetryUntilPowerCycle = false;
             if(mHasCachedTrigger) {
-                invokePublish(PresencePublication.PublishType.PRES_PUBLISH_TRIGGER_CACHED_TRIGGER);
+                requestLocalPublish(PublishType.PRES_PUBLISH_TRIGGER_CACHED_TRIGGER);
             }
         }
     }
@@ -445,8 +436,7 @@ public class PresencePublication extends PresenceBase {
             mDataEnabled = value;
             RcsSettingUtils.setMobileDataEnabled(mContext, mDataEnabled);
 
-            invokePublish(
-                    PresencePublication.PublishType.PRES_PUBLISH_TRIGGER_DATA_CHANGED);
+            requestLocalPublish(PublishType.PRES_PUBLISH_TRIGGER_DATA_CHANGED);
         }
     }
 
@@ -455,9 +445,14 @@ public class PresencePublication extends PresenceBase {
 
         if(mVtEnabled != enabled) {
             mVtEnabled = enabled;
-            invokePublish(PresencePublication.PublishType.
-                    PRES_PUBLISH_TRIGGER_VTCALL_CHANGED);
+            requestLocalPublish(PublishType.PRES_PUBLISH_TRIGGER_VTCALL_CHANGED);
         }
+    }
+
+    @Override
+    public void onCommandStatusUpdated(int taskId, int requestId, int resultCode) {
+        logger.info("onCommandStatusUpdated: resultCode= " + resultCode);
+        super.onCommandStatusUpdated(taskId, requestId, resultCode);
     }
 
     /**
@@ -471,36 +466,30 @@ public class PresencePublication extends PresenceBase {
                 (System.currentTimeMillis() - mPublishingRequest.getTimestamp()
                 <= publishThreshold);
 
-        return (getPublishState() == PublishState.PUBLISH_STATE_200_OK || publishing);
+        return (getPublishState() == PUBLISH_STATE_200_OK || publishing);
     }
 
     /**
-     * @return the Publish State
+     * @return The result of the last Publish request.
      */
-    public int getPublishState() {
-        if(mRcsStackAdaptor == null){
-            return PublishState.PUBLISH_STATE_NOT_PUBLISHED;
+    public @PresenceBase.PresencePublishState int getPublishState() {
+        if (mPresencePublisher != null) {
+            return mPresencePublisher.getPublisherState();
         }
-
-        return mRcsStackAdaptor.getPublishState();
+        return PUBLISH_STATE_NOT_PUBLISHED;
     }
 
     /**
-     * @param mPublishState the publishState to set
+     * @param publishState The result of the last publish request.
      */
     public void setPublishState(int publishState) {
-        if(mRcsStackAdaptor != null){
-            mRcsStackAdaptor.setPublishState(publishState);
+        if (mPresencePublisher != null) {
+            mPresencePublisher.updatePublisherState(publishState);
         }
     }
 
-    public boolean getHasCachedTrigger(){
-        return mHasCachedTrigger;
-    }
-
-    // Tiggered by framework.
-    public int invokePublish(int trigger){
-        int ret;
+    // Trigger a local publish based off of state changes in the framework.
+    private void requestLocalPublish(int trigger) {
 
         // if the value is true then it will call stack to send the PUBLISH
         // though the previous publish had the same capability
@@ -553,26 +542,26 @@ public class PresencePublication extends PresenceBase {
         if(mGotTriggerFromStack == false){
             // Waiting for RCS stack get ready.
             logger.print("Didn't get trigger from stack yet, discard framework trigger.");
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            return;
         }
 
         if (mDonotRetryUntilPowerCycle) {
             logger.print("Don't publish until next power cycle");
-            return ResultCode.SUCCESS;
+            return;
         }
 
         if(!mSimLoaded){
             //need to read some information from SIM to publish
             logger.print("invokePublish cache the trigger since the SIM is not ready");
             mHasCachedTrigger = true;
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            return;
         }
 
         //the provision status didn't be read from modem yet
         if(!RcsSettingUtils.isEabProvisioned(mContext)) {
             logger.print("invokePublish cache the trigger, not provision yet");
             mHasCachedTrigger = true;
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            return;
         }
 
         PublishRequest publishRequest = new PublishRequest(
@@ -580,25 +569,20 @@ public class PresencePublication extends PresenceBase {
 
         requestPublication(publishRequest);
 
-        return ResultCode.SUCCESS;
+        return;
     }
 
-    public int invokePublish(PresPublishTriggerType val) {
-        int ret;
-
+    public void onStackPublishRequested(@StackPublishTriggerType int publishTriggerType) {
         mGotTriggerFromStack = true;
 
-        // Always send the PUBLISH when we got the trigger from stack.
-        // This can avoid any issue when switch the phone between IWLAN and LTE.
-        boolean bForceToNetwork = true;
-        switch (val.getPublishTrigeerType())
+        switch (publishTriggerType)
         {
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_ETAG_EXPIRED:
+            case UCE_PRES_PUBLISH_TRIGGER_ETAG_EXPIRED:
             {
                 logger.print("PUBLISH_TRIGGER_ETAG_EXPIRED");
                 break;
             }
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_DISABLED:
+            case UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_DISABLED:
             {
                 logger.print("PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_DISABLED");
                 mMovedToLTE = true;
@@ -609,7 +593,7 @@ public class PresencePublication extends PresenceBase {
                 mImsRegistered = true;
                 break;
             }
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_ENABLED:
+            case UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_ENABLED:
             {
                 logger.print("PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_ENABLED");
                 mMovedToLTE = true;
@@ -620,7 +604,7 @@ public class PresencePublication extends PresenceBase {
                 mImsRegistered = true;
                 break;
             }
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_IWLAN:
+            case UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_IWLAN:
             {
                 logger.print("QRCS_PRES_PUBLISH_TRIGGER_MOVE_TO_IWLAN");
                 mMovedToLTE = false;
@@ -631,7 +615,7 @@ public class PresencePublication extends PresenceBase {
                 mImsRegistered = true;
                 break;
             }
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_EHRPD:
+            case UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_EHRPD:
             {
                 logger.print("PUBLISH_TRIGGER_MOVE_TO_EHRPD");
                 mMovedToLTE = false;
@@ -642,7 +626,7 @@ public class PresencePublication extends PresenceBase {
                 mImsRegistered = true;
                 break;
             }
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_HSPAPLUS:
+            case UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_HSPAPLUS:
             {
                 logger.print("PUBLISH_TRIGGER_MOVE_TO_HSPAPLUS");
                 mMovedToLTE = false;
@@ -650,7 +634,7 @@ public class PresencePublication extends PresenceBase {
                 mMovedToIWLAN = false;
                 break;
             }
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_2G:
+            case UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_2G:
             {
                 logger.print("PUBLISH_TRIGGER_MOVE_TO_2G");
                 mMovedToLTE = false;
@@ -658,7 +642,7 @@ public class PresencePublication extends PresenceBase {
                 mMovedToIWLAN = false;
                 break;
             }
-            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_3G:
+            case UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_3G:
             {
                 logger.print("PUBLISH_TRIGGER_MOVE_TO_3G");
                 mMovedToLTE = false;
@@ -672,29 +656,38 @@ public class PresencePublication extends PresenceBase {
 
         if (mDonotRetryUntilPowerCycle) {
             logger.print("Don't publish until next power cycle");
-            return ResultCode.SUCCESS;
+            return;
         }
 
         if(!mSimLoaded){
             //need to read some information from SIM to publish
             logger.print("invokePublish cache the trigger since the SIM is not ready");
             mHasCachedTrigger = true;
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            return;
         }
 
         //the provision status didn't be read from modem yet
         if(!RcsSettingUtils.isEabProvisioned(mContext)) {
             logger.print("invokePublish cache the trigger, not provision yet");
             mHasCachedTrigger = true;
-            return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
+            return;
         }
 
+        // Always send the PUBLISH when we got the trigger from stack.
+        // This can avoid any issue when switch the phone between IWLAN and LTE.
         PublishRequest publishRequest = new PublishRequest(
-                bForceToNetwork, System.currentTimeMillis());
+                true /*forceToNetwork*/, System.currentTimeMillis());
 
         requestPublication(publishRequest);
+    }
 
-        return ResultCode.SUCCESS;
+    /**
+     * Trigger a publish when the stack becomes available and we have a cached trigger waiting.
+     */
+    public void onStackAvailable() {
+        if (mHasCachedTrigger) {
+            requestLocalPublish(PublishType.PRES_PUBLISH_TRIGGER_CACHED_TRIGGER);
+        }
     }
 
     public class PublishRequest {
@@ -835,8 +828,8 @@ public class PresencePublication extends PresenceBase {
             return;
         }
 
-        if (mRcsStackAdaptor == null) {
-            logger.error("mRcsStackAdaptor == null");
+        if (mPresencePublisher == null) {
+            logger.error("mPresencePublisher == null");
             return;
         }
 
@@ -861,7 +854,7 @@ public class PresencePublication extends PresenceBase {
                 (publishRequest.hasSamePublishContent(mPublishingRequest) ||
                         (mPublishingRequest == null) &&
                         publishRequest.hasSamePublishContent(mPublishedRequest)) &&
-                (getPublishState() != PublishState.PUBLISH_STATE_NOT_PUBLISHED)) {
+                (getPublishState() != PUBLISH_STATE_NOT_PUBLISHED)) {
             logger.print("Don't need publish since the capability didn't change publishRequest " +
                     publishRequest + " getPublishState()=" + getPublishState());
             return;
@@ -897,7 +890,7 @@ public class PresencePublication extends PresenceBase {
         // we need send PUBLISH once even the volte is off when power on the phone.
         // That will tell other phone that it has no volte/vt capability.
         if(!getImsManager().isEnhanced4gLteModeSettingEnabledByUser() &&
-                getPublishState() != PublishState.PUBLISH_STATE_NOT_PUBLISHED) {
+                getPublishState() != PUBLISH_STATE_NOT_PUBLISHED) {
              // volte was not enabled.
              // or it is turnning off volte. lower layer should unpublish
              reset();
@@ -906,35 +899,33 @@ public class PresencePublication extends PresenceBase {
 
         TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
                 Context.TELEPHONY_SERVICE);
-        if(teleMgr ==null) {
-             logger.debug("teleMgr=null");
+        if (teleMgr == null) {
+             logger.error("TelephonyManager not available.");
              return;
-         }
+        }
+        Uri contactUri = Uri.fromParts(PhoneAccount.SCHEME_TEL, teleMgr.getLine1Number(), null);
 
-        RcsPresenceInfo presenceInfo = new RcsPresenceInfo(teleMgr.getLine1Number(),
-                RcsPresenceInfo.VolteStatus.VOLTE_UNKNOWN,
-                publishRequest.getVolteCapable()?RcsPresenceInfo.ServiceState.ONLINE:
-                        RcsPresenceInfo.ServiceState.OFFLINE, null, System.currentTimeMillis(),
-                publishRequest.getVtCapable()?RcsPresenceInfo.ServiceState.ONLINE:
-                        RcsPresenceInfo.ServiceState.OFFLINE, null,
-                        System.currentTimeMillis());
+        RcsContactUceCapability.Builder presenceInfoBuilder =
+                new RcsContactUceCapability.Builder(contactUri);
+        if (publishRequest.getVolteCapable()) {
+            presenceInfoBuilder.add(RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL);
+        }
+        if (publishRequest.getVtCapable()) {
+            presenceInfoBuilder.add(RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL);
+        }
 
         synchronized(mSyncObj) {
             mPublishingRequest = publishRequest;
             mPublishingRequest.setTimestamp(System.currentTimeMillis());
         }
 
-        int ret = mRcsStackAdaptor.requestPublication(presenceInfo, null);
-        if(ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE){
+        int ret = mPresencePublisher.requestPublication(presenceInfoBuilder.build());
+        if (ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE) {
             mHasCachedTrigger = true;
-        }else{
+        } else {
             //reset the cached trigger
             mHasCachedTrigger = false;
         }
-    }
-
-    public void handleCmdStatus(PresCmdStatus cmdStatus) {
-        super.handleCmdStatus(cmdStatus);
     }
 
     private PendingIntent mRetryAlarmIntent = null;
@@ -959,7 +950,7 @@ public class PresencePublication extends PresenceBase {
         mCancelRetry = false;
 
         Intent intent = new Intent(ACTION_RETRY_PUBLISH_ALARM);
-        intent.setClass(mContext, AlarmBroadcastReceiver.class);
+        intent.setPackage(mContext.getPackageName());
         mRetryAlarmIntent = PendingIntent.getBroadcast(mContext, 0, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT);
 
@@ -981,28 +972,23 @@ public class PresencePublication extends PresenceBase {
             return;
         }
 
-        invokePublish(PublishType.PRES_PUBLISH_TRIGGER_RETRY);
+        requestLocalPublish(PublishType.PRES_PUBLISH_TRIGGER_RETRY);
     }
 
-    public void handleSipResponse(PresSipResponse pSipResponse) {
-        logger.print( "Publish response code = " + pSipResponse.getSipResponseCode()
-                +"Publish response reason phrase = " + pSipResponse.getReasonPhrase());
+    public void onSipResponse(int requestId, int responseCode, String reasonPhrase) {
+        logger.print( "Publish response code = " + responseCode
+                +"Publish response reason phrase = " + reasonPhrase);
 
         synchronized(mSyncObj) {
             mPublishedRequest = mPublishingRequest;
             mPublishingRequest = null;
         }
-        if(pSipResponse == null){
-            logger.debug("handlePublishResponse pSipResponse = null");
-            return;
-        }
-        int sipCode = pSipResponse.getSipResponseCode();
 
-        if(isInConfigList(sipCode, pSipResponse.getReasonPhrase(),
+        if (isInConfigList(responseCode, reasonPhrase,
                 mConfigVolteProvisionErrorOnPublishResponse)) {
-            logger.print("volte provision error. sipCode=" + sipCode + " phrase=" +
-                    pSipResponse.getReasonPhrase());
-            setPublishState(PublishState.PUBLISH_STATE_VOLTE_PROVISION_ERROR);
+            logger.print("volte provision error. sipCode=" + responseCode + " phrase=" +
+                    reasonPhrase);
+            setPublishState(PUBLISH_STATE_VOLTE_PROVISION_ERROR);
             mDonotRetryUntilPowerCycle = true;
 
             notifyDm();
@@ -1010,49 +996,47 @@ public class PresencePublication extends PresenceBase {
             return;
         }
 
-        if(isInConfigList(sipCode, pSipResponse.getReasonPhrase(),
-                mConfigRcsProvisionErrorOnPublishResponse)) {
-            logger.print("rcs provision error.sipCode=" + sipCode + " phrase=" +
-                    pSipResponse.getReasonPhrase());
-            setPublishState(PublishState.PUBLISH_STATE_RCS_PROVISION_ERROR);
+        if (isInConfigList(responseCode, reasonPhrase, mConfigRcsProvisionErrorOnPublishResponse)) {
+            logger.print("rcs provision error.sipCode=" + responseCode + " phrase=" + reasonPhrase);
+            setPublishState(PUBLISH_STATE_RCS_PROVISION_ERROR);
             mDonotRetryUntilPowerCycle = true;
 
             return;
         }
 
-        switch (sipCode) {
+        switch (responseCode) {
             case 999:
                 logger.debug("Publish ignored - No capability change");
                 break;
             case 200:
-                setPublishState(PublishState.PUBLISH_STATE_200_OK);
+                setPublishState(PUBLISH_STATE_200_OK);
                 if(mSubscriber != null) {
                     mSubscriber.retryToGetAvailability();
                 }
                 break;
 
             case 408:
-                setPublishState(PublishState.PUBLISH_STATE_REQUEST_TIMEOUT);
+                setPublishState(PUBLISH_STATE_REQUEST_TIMEOUT);
                 break;
 
             default: // Generic Failure
-                if ((sipCode < 100) || (sipCode > 699)) {
-                    logger.debug("Ignore internal response code, sipCode=" + sipCode);
+                if ((responseCode < 100) || (responseCode > 699)) {
+                    logger.debug("Ignore internal response code, sipCode=" + responseCode);
                     // internal error
                     //  0- PERMANENT ERROR: UI should not retry immediately
                     //  888- TEMP ERROR:  UI Can retry immediately
                     //  999- NO CHANGE: No Publish needs to be sent
-                    if(sipCode == 888) {
+                    if(responseCode == 888) {
                         // retry per 2 minutes
                         scheduleRetryPublish(120000);
                     } else {
-                        logger.debug("Ignore internal response code, sipCode=" + sipCode);
+                        logger.debug("Ignore internal response code, sipCode=" + responseCode);
                     }
                 } else {
                     logger.debug( "Generic Failure");
-                    setPublishState(PublishState.PUBLISH_STATE_OTHER_ERROR);
+                    setPublishState(PUBLISH_STATE_OTHER_ERROR);
 
-                    if ((sipCode>=400) && (sipCode <= 699)) {
+                    if ((responseCode>=400) && (responseCode <= 699)) {
                         // 4xx/5xx/6xx, No retry, no impact on subsequent publish
                         logger.debug( "No Retry in OEM");
                     }
@@ -1061,11 +1045,10 @@ public class PresencePublication extends PresenceBase {
         }
 
         // Suppose the request ID had been set when IQPresListener_CMDStatus
-        Task task = TaskManager.getDefault().getTaskByRequestId(
-                pSipResponse.getRequestId());
+        Task task = TaskManager.getDefault().getTaskByRequestId(requestId);
         if(task != null){
-            task.mSipResponseCode = pSipResponse.getSipResponseCode();
-            task.mSipReasonPhrase = pSipResponse.getReasonPhrase();
+            task.mSipResponseCode = responseCode;
+            task.mSipReasonPhrase = reasonPhrase;
         }
 
         handleCallback(task, getPublishState(), false);
@@ -1154,7 +1137,7 @@ public class PresencePublication extends PresenceBase {
 
                 if(isOnIWLAN()) {
                     // will check duplicated PUBLISH in requestPublication by invokePublish
-                    invokePublish(PresencePublication.PublishType.
+                    requestLocalPublish(PublishType.
                             PRES_PUBLISH_TRIGGER_FEATURE_AVAILABILITY_CHANGED);
                 }
             } else {

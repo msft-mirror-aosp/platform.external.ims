@@ -36,7 +36,7 @@ import com.android.ims.IRcsPresenceListener;
 import com.android.ims.RcsManager;
 import com.android.ims.RcsPresence;
 import com.android.ims.RcsException;
-import com.android.ims.RcsManager.ResultCode;
+import com.android.ims.ResultCode;
 import com.android.ims.internal.Logger;
 
 import java.util.ArrayList;
