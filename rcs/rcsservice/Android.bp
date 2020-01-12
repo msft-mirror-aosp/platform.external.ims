@@ -38,11 +38,7 @@ java_library {
         "src/com/android/service/ims/Task.java",
         "src/com/android/service/ims/TaskManager.java",
         ":rcsmanager-utils"
-    ],
-    libs: [
-        "telephony-common",
-        "ims-common",
-    ],
+    ]
 }
 
 android_app {

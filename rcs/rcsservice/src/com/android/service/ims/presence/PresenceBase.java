@@ -31,10 +31,10 @@ package com.android.service.ims.presence;
 import android.annotation.IntDef;
 import android.content.Context;
 import android.content.Intent;
+import android.telephony.ims.ImsManager;
 
 import com.android.ims.ResultCode;
 import com.android.ims.internal.Logger;
-import com.android.internal.telephony.TelephonyIntents;
 import com.android.service.ims.Task;
 import com.android.service.ims.TaskManager;
 
@@ -184,7 +184,7 @@ public class PresenceBase {
     protected void notifyDm() {
         logger.debug("notifyDm");
         Intent intent = new Intent(
-                TelephonyIntents.ACTION_FORBIDDEN_NO_SERVICE_AUTHORIZATION);
+                ImsManager.ACTION_FORBIDDEN_NO_SERVICE_AUTHORIZATION);
         intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
 
         mContext.sendBroadcast(intent);
