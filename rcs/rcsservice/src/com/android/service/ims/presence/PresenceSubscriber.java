@@ -65,20 +65,22 @@ public class PresenceSubscriber extends PresenceBase {
         mConfigRcsProvisionErrorOnSubscribeResponse = configRcsProvisionErrorOnSubscribeResponse;
     }
 
-    private String numberToUriString(String number){
-        String formatedContact = number;
-        if(!formatedContact.startsWith("sip:") && !formatedContact.startsWith("tel:")){
-            String domain = TelephonyManager.getDefault().getIsimDomain();
+    private String numberToUriString(String number) {
+        String formattedContact = number;
+        TelephonyManager tm = mContext.getSystemService(TelephonyManager.class);
+        if (tm != null && !formattedContact.startsWith("sip:")
+                && !formattedContact.startsWith("tel:")){
+            String domain = tm.getIsimDomain();
             logger.debug("domain=" + domain);
-            if(domain == null || domain.length() ==0){
-                formatedContact = "tel:" + formatedContact;
-            }else{
-                formatedContact = "sip:" + formatedContact + "@" + domain;
+            if (domain == null || domain.length() == 0){
+                formattedContact = "tel:" + formattedContact;
+            } else {
+                formattedContact = "sip:" + formattedContact + "@" + domain;
             }
         }
 
-        logger.print("numberToUriString formatedContact=" + formatedContact);
-        return formatedContact;
+        logger.print("numberToUriString formattedContact=" + formattedContact);
+        return formattedContact;
     }
 
     private String numberToTelString(String number){
@@ -183,11 +185,9 @@ public class PresenceSubscriber extends PresenceBase {
             }
         }
 
-        boolean isFtSupported = false; // hard code to not support FT at present.
-        boolean isChatSupported = false;  // hard code to not support chat at present.
         // Only poll/fetch capability/availability on LTE
-        if(((TelephonyManager.getDefault().getNetworkType() != TelephonyManager.NETWORK_TYPE_LTE)
-                && !isFtSupported && !isChatSupported)){
+        TelephonyManager tm = mContext.getSystemService(TelephonyManager.class);
+        if(tm == null || (tm.getDataNetworkType() != TelephonyManager.NETWORK_TYPE_LTE)) {
             logger.error("requestAvailability return ERROR_SERVICE_NOT_AVAILABLE" +
                     " for it is not LTE network");
             return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;

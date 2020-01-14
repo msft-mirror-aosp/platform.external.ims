@@ -30,9 +30,12 @@ package com.android.service.ims;
 
 import android.content.Context;
 import android.os.PersistableBundle;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.CarrierConfigManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.ims.ImsException;
+import android.telephony.ims.ImsMmTelManager;
 import android.telephony.ims.ProvisioningManager;
 import android.telephony.ims.feature.MmTelFeature;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
@@ -40,50 +43,37 @@ import android.telephony.ims.stub.ImsRegistrationImplBase;
 import com.android.ims.internal.Logger;
 
 import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class RcsSettingUtils {
     static private Logger logger = Logger.getLogger("RcsSettingUtils");
+    private static final int TIMEOUT_GET_CONFIGURATION_MS = 5000;
 
-    // Values taken from ImsConfig - Should define in @SystemApi as well.
-    /**
-     * SIP T1 timer value in milliseconds. See RFC 3261 for definition.
-     * Value is in Integer format.
-     */
-    private static final int SIP_T1_TIMER = 7;
-    /**
-     * Whether or not capability discovery is provisioned.
-     */
-    private static final int CAPABILITY_DISCOVERY_ENABLED = 17;
-    /**
-     * period of time the availability information of a contact is cached on device.
-     * Value is in Integer format.
-     */
-    private static final int AVAILABILITY_CACHE_EXPIRATION = 19;
-    /**
-     * Minimum time between two published messages from the device.
-     * Value is in Integer format.
-     */
-    private static final int SOURCE_THROTTLE_PUBLISH = 21;
-    /**
-     * The Maximum number of MDNs contained in one Request Contained List.
-     * Value is in Integer format.
-     */
-    private static final int MAX_NUMENTRIES_IN_RCL = 22;
-    /**
-     * Expiration timer for subscription of a Request Contained List, used in capability
-     * polling.
-     * Value is in Integer format.
-     */
-    private static final int CAPAB_POLL_LIST_SUB_EXP = 23;
-    /**
-     * Provisioning status for Enhanced Address Book (EAB)
-     * Value is in Integer format.
-     */
-    private static final int EAB_SETTING_ENABLED = 25;
-    /**
-     * Whether or not mobile data is enabled currently.
-     */
-    private static final int MOBILE_DATA_ENABLED = 29;
+    // Default number of entries for getMaxNumbersInRCL
+    private static final int DEFAULT_NUM_ENTRIES_IN_RCL = 100;
+    // Default for getCapabPollListSubExp in seconds.
+    private static final int DEFAULT_CAPABILITY_POLL_LIST_SUB_EXPIRATION_SEC = 30;
+    // Default for getAvailabilityCacheExpiration in seconds.
+    private static final int DEFAULT_AVAILABILITY_CACHE_EXPIRATION_SEC = 30;
+    // Default for getPublishThrottle in milliseconds
+    private static final int DEFAULT_PUBLISH_THROTTLE_MS = 60000;
+
+    public static boolean isVoLteProvisioned(Context context) {
+        try {
+            boolean isProvisioned;
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            isProvisioned = manager.getProvisioningStatusForCapability(
+                    MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                    ImsRegistrationImplBase.REGISTRATION_TECH_LTE);
+            logger.debug("isVoLteProvisioned=" + isProvisioned);
+            return isProvisioned;
+        } catch (Exception e) {
+            logger.debug("isVoLteProvisioned, exception = " + e.getMessage());
+            return false;
+        }
+    }
 
     public static boolean isVowifiProvisioned(Context context) {
         try {
@@ -136,7 +126,8 @@ public class RcsSettingUtils {
         }
         try {
             ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
-            isProvisioned = manager.getProvisioningIntValue(EAB_SETTING_ENABLED)
+            isProvisioned = manager.getProvisioningIntValue(
+                    ProvisioningManager.KEY_EAB_PROVISIONING_STATUS)
                     == ProvisioningManager.PROVISIONING_VALUE_ENABLED;
         } catch (Exception e) {
             logger.debug("isEabProvisioned: exception=" + e.getMessage());
@@ -150,7 +141,7 @@ public class RcsSettingUtils {
         try {
             ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
                     getDefaultSubscriptionId(context));
-            sipT1Timer = manager.getProvisioningIntValue(SIP_T1_TIMER);
+            sipT1Timer = manager.getProvisioningIntValue(ProvisioningManager.KEY_T1_TIMER_VALUE_MS);
         } catch (Exception e) {
             // If there is no active subscriptions, this will throw an exception.
             logger.debug("getSIPT1Timer: exception=" + e.getMessage());
@@ -167,8 +158,9 @@ public class RcsSettingUtils {
         try {
             ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
                     getDefaultSubscriptionId(context));
-            capabilityDiscoveryEnabled = manager.getProvisioningIntValue(CAPABILITY_DISCOVERY_ENABLED)
-                    == ProvisioningManager.PROVISIONING_VALUE_ENABLED;
+            capabilityDiscoveryEnabled = manager.getProvisioningIntValue(
+                    ProvisioningManager.KEY_RCS_CAPABILITY_DISCOVERY_ENABLED) ==
+                    ProvisioningManager.PROVISIONING_VALUE_ENABLED;
         } catch (Exception e) {
             // If there is no active subscriptions, this will throw an exception.
             logger.debug("capabilityDiscoveryEnabled: exception=" + e.getMessage());
@@ -181,11 +173,12 @@ public class RcsSettingUtils {
      * The Maximum number of MDNs contained in one Request Contained List.
      */
     public static int getMaxNumbersInRCL(Context context) {
-        int maxNumbersInRCL = 100;
+        int maxNumbersInRCL = DEFAULT_NUM_ENTRIES_IN_RCL;
         try {
             ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
                     getDefaultSubscriptionId(context));
-            maxNumbersInRCL = manager.getProvisioningIntValue(MAX_NUMENTRIES_IN_RCL);
+            maxNumbersInRCL = manager.getProvisioningIntValue(
+                    ProvisioningManager.KEY_RCS_MAX_NUM_ENTRIES_IN_RCL);
         } catch (Exception e) {
             // If there is no active subscriptions, this will throw an exception.
             logger.debug("getMaxNumbersInRCL: exception=" + e.getMessage());
@@ -198,11 +191,12 @@ public class RcsSettingUtils {
      * Expiration timer for subscription of a Request Contained List, used in capability polling.
      */
     public static int getCapabPollListSubExp(Context context) {
-        int capabPollListSubExp = 30;
+        int capabPollListSubExp = DEFAULT_CAPABILITY_POLL_LIST_SUB_EXPIRATION_SEC;
         try {
             ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
                     getDefaultSubscriptionId(context));
-            capabPollListSubExp = manager.getProvisioningIntValue(CAPAB_POLL_LIST_SUB_EXP);
+            capabPollListSubExp = manager.getProvisioningIntValue(
+                    ProvisioningManager.KEY_RCS_CAPABILITY_POLL_LIST_SUB_EXP_SEC);
         } catch (Exception e) {
             // If there is no active subscriptions, this will throw an exception.
             logger.debug("getCapabPollListSubExp: exception=" + e.getMessage());
@@ -215,12 +209,12 @@ public class RcsSettingUtils {
      * Period of time the availability information of a contact is cached on device.
      */
     public static int getAvailabilityCacheExpiration(Context context) {
-        int availabilityCacheExpiration = 30;
+        int availabilityCacheExpiration = DEFAULT_AVAILABILITY_CACHE_EXPIRATION_SEC;
         try {
             ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
                     getDefaultSubscriptionId(context));
             availabilityCacheExpiration = manager.getProvisioningIntValue(
-                    AVAILABILITY_CACHE_EXPIRATION);
+                    ProvisioningManager.KEY_RCS_AVAILABILITY_CACHE_EXPIRATION_SEC);
         } catch (Exception e) {
             // If there is no active subscriptions, this will throw an exception.
             logger.debug("getAvailabilityCacheExpiration: exception=" + e.getMessage());
@@ -229,42 +223,14 @@ public class RcsSettingUtils {
         return availabilityCacheExpiration;
     }
 
-    public static boolean isMobileDataEnabled(Context context) {
-        boolean mobileDataEnabled = false;
-        try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
-            mobileDataEnabled = manager.getProvisioningIntValue(MOBILE_DATA_ENABLED)
-                    == ProvisioningManager.PROVISIONING_VALUE_ENABLED;
-        } catch (Exception e) {
-            // If there is no active subscriptions, this will throw an exception.
-            logger.debug("isMobileDataEnabled: exception=" + e.getMessage());
-        }
-        logger.debug("mobileDataEnabled=" + mobileDataEnabled);
-        return mobileDataEnabled;
-    }
-
-    public static void setMobileDataEnabled(Context context, boolean mobileDataEnabled) {
-        logger.debug("mobileDataEnabled=" + mobileDataEnabled);
-        try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
-            manager.setProvisioningIntValue(MOBILE_DATA_ENABLED, mobileDataEnabled ?
-                    ProvisioningManager.PROVISIONING_VALUE_ENABLED :
-                    ProvisioningManager.PROVISIONING_VALUE_DISABLED);
-        } catch (Exception e) {
-            // If there is no active subscriptions, this will throw an exception.
-            logger.debug("mobileDataEnabled: exception=" + e.getMessage());
-        }
-    }
-
     public static int getPublishThrottle(Context context) {
         // Default
-        int publishThrottle = 60000;
+        int publishThrottle = DEFAULT_PUBLISH_THROTTLE_MS;
         try {
             ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
                     getDefaultSubscriptionId(context));
-            publishThrottle = manager.getProvisioningIntValue(SOURCE_THROTTLE_PUBLISH);
+            publishThrottle = manager.getProvisioningIntValue(
+                    ProvisioningManager.KEY_RCS_PUBLISH_SOURCE_THROTTLE_MS);
         } catch (Exception e) {
             // If there is no active subscriptions, this will throw an exception.
             logger.debug("publishThrottle: exception=" + e.getMessage());
@@ -273,9 +239,103 @@ public class RcsSettingUtils {
         return publishThrottle;
     }
 
-    private static int getDefaultSubscriptionId(Context context) {
+    public static boolean isVtEnabledByUser(Context context) {
+        try {
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            return mmTelManager.isVtSettingEnabled();
+        } catch (Exception e) {
+            logger.warn("isVtEnabledByUser exception = " + e.getMessage());
+            return false;
+        }
+    }
+
+    public static boolean isWfcEnabledByUser(Context context) {
+        try {
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+        return mmTelManager.isVoWiFiSettingEnabled();
+        } catch (Exception e) {
+            logger.warn("isWfcEnabledByUser exception = " + e.getMessage());
+            return false;
+        }
+    }
+
+    public static boolean isAdvancedCallingEnabledByUser(Context context) {
+        try {
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            return mmTelManager.isAdvancedCallingSettingEnabled();
+        } catch (Exception e) {
+            logger.warn("isAdvancedCallingEnabledByUser exception = " + e.getMessage());
+            return false;
+        }
+    }
+
+    public static boolean isVoLteSupported(Context context) {
+        LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
+        try {
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            mmTelManager.isSupported(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                    AccessNetworkConstants.TRANSPORT_TYPE_WWAN, Runnable::run, resultQueue::offer);
+        } catch (ImsException e) {
+            logger.warn("isVoLteSupported: ImsException = " + e.getMessage());
+            return false;
+        }
+        try {
+            Boolean result = resultQueue.poll(TIMEOUT_GET_CONFIGURATION_MS, TimeUnit.MILLISECONDS);
+            return (result != null) ? result : false;
+        } catch (InterruptedException e) {
+            logger.warn("isVoLteSupported, InterruptedException=" + e.getMessage());
+            return false;
+        }
+    }
+
+    public static boolean isVoWiFiSupported(Context context) {
+        LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
+        try {
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            mmTelManager.isSupported(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                    AccessNetworkConstants.TRANSPORT_TYPE_WLAN, Runnable::run, resultQueue::offer);
+        } catch (ImsException e) {
+            logger.warn("isVoWiFiSupported: ImsException = " + e.getMessage());
+            return false;
+        }
+        try {
+            Boolean result = resultQueue.poll(TIMEOUT_GET_CONFIGURATION_MS, TimeUnit.MILLISECONDS);
+            return (result != null) ? result : false;
+        } catch (InterruptedException e) {
+            logger.warn("isVoWiFiSupported, InterruptedException=" + e.getMessage());
+            return false;
+        }
+    }
+
+    public static boolean isVtSupported(Context context) {
+        LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
+        try {
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
+                    getDefaultSubscriptionId(context));
+            mmTelManager.isSupported(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VIDEO,
+                    AccessNetworkConstants.TRANSPORT_TYPE_WWAN, Runnable::run, resultQueue::offer);
+        } catch (ImsException e) {
+            logger.warn("isVoWiFiSupported: ImsException = " + e.getMessage());
+            return false;
+        }
+        try {
+            Boolean result = resultQueue.poll(TIMEOUT_GET_CONFIGURATION_MS, TimeUnit.MILLISECONDS);
+            return (result != null) ? result : false;
+        } catch (InterruptedException e) {
+            logger.warn("isVtSupported, InterruptedException=" + e.getMessage());
+            return false;
+        }
+    }
+
+    public static int getDefaultSubscriptionId(Context context) {
         SubscriptionManager sm = context.getSystemService(SubscriptionManager.class);
-        List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
+        if (sm == null) return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+            List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
         if (infos == null || infos.isEmpty()) {
             // There are no active subscriptions right now.
             return SubscriptionManager.INVALID_SUBSCRIPTION_ID;

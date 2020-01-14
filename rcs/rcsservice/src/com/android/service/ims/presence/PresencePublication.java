@@ -43,17 +43,14 @@ import android.provider.Settings;
 import android.telecom.PhoneAccount;
 import android.telecom.TelecomManager;
 import android.telephony.AccessNetworkConstants;
-import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.RcsContactUceCapability;
 import android.telephony.ims.feature.MmTelFeature;
 
 import com.android.ims.ImsConfig;
-import com.android.ims.ImsManager;
 import com.android.ims.ResultCode;
 import com.android.ims.internal.Logger;
 import com.android.internal.telephony.IccCardConstants;
-import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.service.ims.RcsSettingUtils;
 import com.android.service.ims.Task;
@@ -95,7 +92,7 @@ public class PresencePublication extends PresenceBase {
     private boolean mGotTriggerFromStack = false;
     private boolean mDonotRetryUntilPowerCycle = false;
     private boolean mSimLoaded = false;
-    private int mPreferredTtyMode = Phone.TTY_MODE_OFF;
+    private int mPreferredTtyMode = TelecomManager.TTY_MODE_OFF;
 
     private boolean mImsRegistered = false;
     private boolean mVtEnabled = false;
@@ -160,19 +157,14 @@ public class PresencePublication extends PresenceBase {
         mConfigVolteProvisionErrorOnPublishResponse = configVolteProvisionErrorOnPublishResponse;
         mConfigRcsProvisionErrorOnPublishResponse = configRcsProvisionErrorOnPublishResponse;
 
-        mVtEnabled = getImsManager().isVtEnabledByUser();
+        mVtEnabled = RcsSettingUtils.isVtEnabledByUser(mContext);
 
         mDataEnabled = Settings.Global.getInt(mContext.getContentResolver(),
                     Settings.Global.MOBILE_DATA, 1) == 1;
-        new Thread(() -> {
-            RcsSettingUtils.setMobileDataEnabled(mContext, mDataEnabled);
-        }).start();
         logger.debug("The current mobile data is: " + (mDataEnabled ? "enabled" : "disabled"));
 
-        mPreferredTtyMode = Settings.Secure.getInt(
-                mContext.getContentResolver(),
-                Settings.Secure.PREFERRED_TTY_MODE,
-                Phone.TTY_MODE_OFF);
+        TelecomManager tm = mContext.getSystemService(TelecomManager.class);
+        mPreferredTtyMode = tm.getCurrentTtyMode();
         logger.debug("The current TTY mode is: " + mPreferredTtyMode);
 
         mReceiver = new BroadcastReceiver() {
@@ -242,7 +234,6 @@ public class PresencePublication extends PresenceBase {
                     int newPreferredTtyMode = intent.getIntExtra(
                             TelecomManager.EXTRA_TTY_PREFERRED_MODE,
                             TelecomManager.TTY_MODE_OFF);
-                    newPreferredTtyMode = telecomTtyModeToPhoneMode(newPreferredTtyMode);
                     logger.debug("Tty mode changed from " + mPreferredTtyMode
                             + " to " + newPreferredTtyMode);
 
@@ -277,23 +268,22 @@ public class PresencePublication extends PresenceBase {
         sPresencePublication = this;
     }
 
-    private boolean isIPVoiceSupported(boolean volteAvailable, boolean vtAvailable,
-            boolean voWifiAvailable, boolean viWifiAvailable) {
-        ImsManager imsManager = getImsManager();
+    private boolean isIPVoiceSupported(boolean volteAvailable, boolean voWifiAvailable) {
         // volte and vowifi can be enabled separately
-        if(!imsManager.isVolteEnabledByPlatform() && !imsManager.isWfcEnabledByPlatform()) {
+        if(!RcsSettingUtils.isVoLteSupported(mContext) &&
+                !RcsSettingUtils.isVoWiFiSupported(mContext)) {
             logger.print("Disabled by platform, voiceSupported=false");
             return false;
         }
 
-        if(!imsManager.isVolteProvisionedOnDevice() &&
+        if(!RcsSettingUtils.isVoLteProvisioned(mContext) &&
                 !RcsSettingUtils.isVowifiProvisioned(mContext)) {
             logger.print("Wasn't provisioned, voiceSupported=false");
             return false;
         }
 
-        if(!imsManager.isEnhanced4gLteModeSettingEnabledByUser() &&
-                !imsManager.isWfcEnabledByUser()){
+        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mContext) &&
+                !RcsSettingUtils.isWfcEnabledByUser(mContext)){
             logger.print("User didn't enable volte or wfc, voiceSupported=false");
             return false;
         }
@@ -320,24 +310,21 @@ public class PresencePublication extends PresenceBase {
         return true;
     }
 
-    private boolean isIPVideoSupported(boolean volteAvailable, boolean vtAvailable,
-            boolean voWifiAvailable, boolean viWifiAvailable) {
-        ImsManager imsManager = getImsManager();
+    private boolean isIPVideoSupported(boolean vtAvailable, boolean viWifiAvailable) {
         // if volte or vt was disabled then the viwifi will be disabled as well.
-        if(!imsManager.isVolteEnabledByPlatform() ||
-                !imsManager.isVtEnabledByPlatform()) {
+        if(!RcsSettingUtils.isVoLteSupported(mContext) ||
+                !RcsSettingUtils.isVtSupported(mContext)) {
             logger.print("Disabled by platform, videoSupported=false");
             return false;
         }
 
-        if(!imsManager.isVolteProvisionedOnDevice() ||
+        if(!RcsSettingUtils.isVoLteProvisioned(mContext) ||
                 !RcsSettingUtils.isLvcProvisioned(mContext)) {
             logger.print("Not provisioned. videoSupported=false");
             return false;
         }
 
-        if(!imsManager.isEnhanced4gLteModeSettingEnabledByUser() ||
-                !mVtEnabled){
+        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mContext) || !mVtEnabled){
             logger.print("User disabled volte or vt, videoSupported=false");
             return false;
         }
@@ -434,7 +421,6 @@ public class PresencePublication extends PresenceBase {
         logger.print("onMobileDataChanged, mDataEnabled=" + mDataEnabled + " value=" + value);
         if(mDataEnabled != value) {
             mDataEnabled = value;
-            RcsSettingUtils.setMobileDataEnabled(mContext, mDataEnabled);
 
             requestLocalPublish(PublishType.PRES_PUBLISH_TRIGGER_DATA_CHANGED);
         }
@@ -703,14 +689,8 @@ public class PresencePublication extends PresenceBase {
         }
 
         public void refreshPublishContent() {
-            mVolteCapable = isIPVoiceSupported(mIsVolteAvailable,
-                mIsVtAvailable,
-                mIsVoWifiAvailable,
-                mIsViWifiAvailable);
-            mVtCapable = isIPVideoSupported(mIsVolteAvailable,
-                mIsVtAvailable,
-                mIsVoWifiAvailable,
-                mIsViWifiAvailable);
+            mVolteCapable = isIPVoiceSupported(mIsVolteAvailable, mIsVoWifiAvailable);
+            mVtCapable = isIPVideoSupported(mIsVtAvailable, mIsViWifiAvailable);
         }
 
         public boolean getForceToNetwork() {
@@ -889,7 +869,7 @@ public class PresencePublication extends PresenceBase {
 
         // we need send PUBLISH once even the volte is off when power on the phone.
         // That will tell other phone that it has no volte/vt capability.
-        if(!getImsManager().isEnhanced4gLteModeSettingEnabledByUser() &&
+        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mContext) &&
                 getPublishState() != PUBLISH_STATE_NOT_PUBLISHED) {
              // volte was not enabled.
              // or it is turnning off volte. lower layer should unpublish
@@ -1055,21 +1035,7 @@ public class PresencePublication extends PresenceBase {
     }
 
     private static boolean isTtyEnabled(int mode) {
-        return Phone.TTY_MODE_OFF != mode;
-    }
-
-    private static int telecomTtyModeToPhoneMode(int telecomMode) {
-        switch (telecomMode) {
-            case TelecomManager.TTY_MODE_FULL:
-                return Phone.TTY_MODE_FULL;
-            case TelecomManager.TTY_MODE_VCO:
-                return Phone.TTY_MODE_VCO;
-            case TelecomManager.TTY_MODE_HCO:
-                return Phone.TTY_MODE_HCO;
-            case TelecomManager.TTY_MODE_OFF:
-            default:
-                return Phone.TTY_MODE_OFF;
-        }
+        return TelecomManager.TTY_MODE_OFF != mode;
     }
 
     public void finish() {
@@ -1164,10 +1130,5 @@ public class PresencePublication extends PresenceBase {
 
             // Had reported IWLAN by trigger and still have DATA.
             return mMovedToIWLAN && (networkType != TelephonyManager.NETWORK_TYPE_UNKNOWN);
-    }
-
-
-    private ImsManager getImsManager() {
-        return ImsManager.getInstance(mContext, SubscriptionManager.getDefaultVoicePhoneId());
     }
 }
