@@ -59,11 +59,10 @@ public class RcsSettingUtils {
     // Default for getPublishThrottle in milliseconds
     private static final int DEFAULT_PUBLISH_THROTTLE_MS = 60000;
 
-    public static boolean isVoLteProvisioned(Context context) {
+    public static boolean isVoLteProvisioned(int subId) {
         try {
             boolean isProvisioned;
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             isProvisioned = manager.getProvisioningStatusForCapability(
                     MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
                     ImsRegistrationImplBase.REGISTRATION_TECH_LTE);
@@ -75,11 +74,10 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isVowifiProvisioned(Context context) {
+    public static boolean isVowifiProvisioned(int subId) {
         try {
             boolean isProvisioned;
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             isProvisioned = manager.getProvisioningStatusForCapability(
                     MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
                     ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN);
@@ -91,11 +89,10 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isLvcProvisioned(Context context) {
+    public static boolean isLvcProvisioned(int subId) {
         try {
             boolean isProvisioned;
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             isProvisioned = manager.getProvisioningStatusForCapability(
                     MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VIDEO,
                     ImsRegistrationImplBase.REGISTRATION_TECH_LTE);
@@ -107,9 +104,8 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isEabProvisioned(Context context) {
+    public static boolean isEabProvisioned(Context context, int subId) {
         boolean isProvisioned = false;
-        int subId = getDefaultSubscriptionId(context);
         if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
             logger.debug("isEabProvisioned: no valid subscriptions!");
             return false;
@@ -136,11 +132,10 @@ public class RcsSettingUtils {
         return isProvisioned;
     }
 
-    public static int getSIPT1Timer(Context context) {
+    public static int getSIPT1Timer(int subId) {
         int sipT1Timer = 0;
         try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             sipT1Timer = manager.getProvisioningIntValue(ProvisioningManager.KEY_T1_TIMER_VALUE_MS);
         } catch (Exception e) {
             // If there is no active subscriptions, this will throw an exception.
@@ -153,11 +148,10 @@ public class RcsSettingUtils {
     /**
      * Capability discovery status of Enabled (1), or Disabled (0).
      */
-    public static boolean getCapabilityDiscoveryEnabled(Context context) {
+    public static boolean getCapabilityDiscoveryEnabled(int subId) {
         boolean capabilityDiscoveryEnabled = false;
         try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             capabilityDiscoveryEnabled = manager.getProvisioningIntValue(
                     ProvisioningManager.KEY_RCS_CAPABILITY_DISCOVERY_ENABLED) ==
                     ProvisioningManager.PROVISIONING_VALUE_ENABLED;
@@ -172,11 +166,10 @@ public class RcsSettingUtils {
     /**
      * The Maximum number of MDNs contained in one Request Contained List.
      */
-    public static int getMaxNumbersInRCL(Context context) {
+    public static int getMaxNumbersInRCL(int subId) {
         int maxNumbersInRCL = DEFAULT_NUM_ENTRIES_IN_RCL;
         try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             maxNumbersInRCL = manager.getProvisioningIntValue(
                     ProvisioningManager.KEY_RCS_MAX_NUM_ENTRIES_IN_RCL);
         } catch (Exception e) {
@@ -190,11 +183,10 @@ public class RcsSettingUtils {
     /**
      * Expiration timer for subscription of a Request Contained List, used in capability polling.
      */
-    public static int getCapabPollListSubExp(Context context) {
+    public static int getCapabPollListSubExp(int subId) {
         int capabPollListSubExp = DEFAULT_CAPABILITY_POLL_LIST_SUB_EXPIRATION_SEC;
         try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             capabPollListSubExp = manager.getProvisioningIntValue(
                     ProvisioningManager.KEY_RCS_CAPABILITY_POLL_LIST_SUB_EXP_SEC);
         } catch (Exception e) {
@@ -208,11 +200,10 @@ public class RcsSettingUtils {
     /**
      * Period of time the availability information of a contact is cached on device.
      */
-    public static int getAvailabilityCacheExpiration(Context context) {
+    public static int getAvailabilityCacheExpiration(int subId) {
         int availabilityCacheExpiration = DEFAULT_AVAILABILITY_CACHE_EXPIRATION_SEC;
         try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             availabilityCacheExpiration = manager.getProvisioningIntValue(
                     ProvisioningManager.KEY_RCS_AVAILABILITY_CACHE_EXPIRATION_SEC);
         } catch (Exception e) {
@@ -223,12 +214,11 @@ public class RcsSettingUtils {
         return availabilityCacheExpiration;
     }
 
-    public static int getPublishThrottle(Context context) {
+    public static int getPublishThrottle(int subId) {
         // Default
         int publishThrottle = DEFAULT_PUBLISH_THROTTLE_MS;
         try {
-            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ProvisioningManager manager = ProvisioningManager.createForSubscriptionId(subId);
             publishThrottle = manager.getProvisioningIntValue(
                     ProvisioningManager.KEY_RCS_PUBLISH_SOURCE_THROTTLE_MS);
         } catch (Exception e) {
@@ -239,10 +229,9 @@ public class RcsSettingUtils {
         return publishThrottle;
     }
 
-    public static boolean isVtEnabledByUser(Context context) {
+    public static boolean isVtEnabledByUser(int subId) {
         try {
-            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
             return mmTelManager.isVtSettingEnabled();
         } catch (Exception e) {
             logger.warn("isVtEnabledByUser exception = " + e.getMessage());
@@ -250,10 +239,9 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isWfcEnabledByUser(Context context) {
+    public static boolean isWfcEnabledByUser(int subId) {
         try {
-            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
         return mmTelManager.isVoWiFiSettingEnabled();
         } catch (Exception e) {
             logger.warn("isWfcEnabledByUser exception = " + e.getMessage());
@@ -261,10 +249,9 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isAdvancedCallingEnabledByUser(Context context) {
+    public static boolean isAdvancedCallingEnabledByUser(int subId) {
         try {
-            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
             return mmTelManager.isAdvancedCallingSettingEnabled();
         } catch (Exception e) {
             logger.warn("isAdvancedCallingEnabledByUser exception = " + e.getMessage());
@@ -272,11 +259,10 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isVoLteSupported(Context context) {
+    public static boolean isVoLteSupported(int subId) {
         LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
         try {
-            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
             mmTelManager.isSupported(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
                     AccessNetworkConstants.TRANSPORT_TYPE_WWAN, Runnable::run, resultQueue::offer);
         } catch (ImsException e) {
@@ -292,11 +278,10 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isVoWiFiSupported(Context context) {
+    public static boolean isVoWiFiSupported(int subId) {
         LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
         try {
-            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
             mmTelManager.isSupported(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
                     AccessNetworkConstants.TRANSPORT_TYPE_WLAN, Runnable::run, resultQueue::offer);
         } catch (ImsException e) {
@@ -312,11 +297,10 @@ public class RcsSettingUtils {
         }
     }
 
-    public static boolean isVtSupported(Context context) {
+    public static boolean isVtSupported(int subId) {
         LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
         try {
-            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(
-                    getDefaultSubscriptionId(context));
+            ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
             mmTelManager.isSupported(MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VIDEO,
                     AccessNetworkConstants.TRANSPORT_TYPE_WWAN, Runnable::run, resultQueue::offer);
         } catch (ImsException e) {
@@ -341,10 +325,14 @@ public class RcsSettingUtils {
             return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         }
         // This code does not support MSIM unfortunately, so only provide presence on the default
-        // subscription that the user chose.
-        int defaultSub = SubscriptionManager.getDefaultSubscriptionId();
+        // voice subscription that the user chose.
+        int defaultSub = SubscriptionManager.getDefaultVoiceSubscriptionId();
+        if (!SubscriptionManager.isValidSubscriptionId(defaultSub)) {
+            // The voice sub may not have been specified, in this case, use the default data.
+            defaultSub = SubscriptionManager.getDefaultDataSubscriptionId();
+        }
         // If the user has no default set, just pick the first as backup.
-        if (defaultSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+        if (!SubscriptionManager.isValidSubscriptionId(defaultSub)) {
             for (SubscriptionInfo info : infos) {
                 if (!info.isOpportunistic()) {
                     defaultSub = info.getSubscriptionId();

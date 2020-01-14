@@ -60,15 +60,14 @@ public class PresenceSetting {
         sContext = context;
     }
 
-    public static long getCapabilityPollInterval() {
+    public static long getCapabilityPollInterval(int subId) {
         long value = -1;
         if (sContext != null) {
-            int defaultSubId = getDefaultSubscriptionId();
-            if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            if (!SubscriptionManager.isValidSubscriptionId(subId)) {
                 return DEFAULT_CAPABILITY_POLL_INTERVAL_SEC;
             }
             try {
-            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(defaultSubId);
+            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
             value = pm.getProvisioningIntValue(
                     ProvisioningManager.KEY_RCS_CAPABILITIES_POLL_INTERVAL_SEC);
             } catch (Exception ex) {
@@ -82,15 +81,14 @@ public class PresenceSetting {
         return value;
     }
 
-    public static long getCapabilityCacheExpiration() {
+    public static long getCapabilityCacheExpiration(int subId) {
         long value = -1;
         if (sContext != null) {
-            int defaultSubId = getDefaultSubscriptionId();
-            if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            if (!SubscriptionManager.isValidSubscriptionId(subId)) {
                 return DEFAULT_CAPABILITY_CACHE_EXPIRATION_SEC;
             }
             try {
-                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(defaultSubId);
+                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
                 value = pm.getProvisioningIntValue(
                         ProvisioningManager.KEY_RCS_CAPABILITIES_CACHE_EXPIRATION_SEC);
             } catch (Exception ex) {
@@ -104,15 +102,14 @@ public class PresenceSetting {
         return value;
     }
 
-    public static int getPublishTimer() {
+    public static int getPublishTimer(int subId) {
         int value = -1;
         if (sContext != null) {
-            int defaultSubId = getDefaultSubscriptionId();
-            if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            if (!SubscriptionManager.isValidSubscriptionId(subId)) {
                 return DEFAULT_PUBLISH_TIMER_SEC;
             }
             try {
-                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(defaultSubId);
+                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
                 value = pm.getProvisioningIntValue(ProvisioningManager.KEY_RCS_PUBLISH_TIMER_SEC);
             } catch (Exception ex) {
                 logger.warn("getPublishTimer, exception = " + ex.getMessage());
@@ -125,15 +122,14 @@ public class PresenceSetting {
         return value;
     }
 
-    public static int getPublishTimerExtended() {
+    public static int getPublishTimerExtended(int subId) {
         int value = -1;
         if (sContext != null) {
-            int defaultSubId = getDefaultSubscriptionId();
-            if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            if (!SubscriptionManager.isValidSubscriptionId(subId)) {
                 return DEFAULT_PUBLISH_TIMER_EXTENDED_SEC;
             }
             try {
-                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(defaultSubId);
+                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
                 value = pm.getProvisioningIntValue(
                         ProvisioningManager.KEY_RCS_PUBLISH_TIMER_EXTENDED_SEC);
             } catch (Exception ex) {
@@ -147,15 +143,14 @@ public class PresenceSetting {
         return value;
     }
 
-    public static int getMaxNumberOfEntriesInRequestContainedList() {
+    public static int getMaxNumberOfEntriesInRequestContainedList(int subId) {
         int value = -1;
         if (sContext != null) {
-            int defaultSubId = getDefaultSubscriptionId();
-            if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            if (!SubscriptionManager.isValidSubscriptionId(subId)) {
                 return DEFAULT_NUM_ENTRIES_IN_RCL;
             }
             try {
-                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(defaultSubId);
+                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
                 value = pm.getProvisioningIntValue(
                         ProvisioningManager.KEY_RCS_MAX_NUM_ENTRIES_IN_RCL);
             } catch (Exception ex) {
@@ -170,15 +165,14 @@ public class PresenceSetting {
         return value;
     }
 
-    public static int getCapabilityPollListSubscriptionExpiration() {
+    public static int getCapabilityPollListSubscriptionExpiration(int subId) {
         int value = -1;
         if (sContext != null) {
-            int defaultSubId = getDefaultSubscriptionId();
-            if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            if (!SubscriptionManager.isValidSubscriptionId(subId)) {
                 return DEFAULT_CAPABILITY_POLL_LIST_SUB_EXPIRATION_SEC;
             }
             try {
-                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(defaultSubId);
+                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
                 value = pm.getProvisioningIntValue(
                         ProvisioningManager.KEY_RCS_CAPABILITY_POLL_LIST_SUB_EXP_SEC);
             } catch (Exception ex) {
@@ -199,10 +193,9 @@ public class PresenceSetting {
      * {@link ProvisioningManager#PROVISIONING_VALUE_DISABLED} if VoLTE is not provisioned, and
      * {@link ProvisioningManager#PROVISIONING_RESULT_UNKNOWN} if there is no value set.
      */
-    public static int getVoLteProvisioningConfig() {
+    public static int getVoLteProvisioningConfig(int subId) {
         try {
-            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(
-                    SubscriptionManager.getDefaultVoiceSubscriptionId());
+            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
             return pm.getProvisioningIntValue(
                     ProvisioningManager.KEY_VOLTE_PROVISIONING_STATUS);
         } catch (Exception e) {
@@ -218,10 +211,9 @@ public class PresenceSetting {
      * {@link ProvisioningManager#PROVISIONING_VALUE_DISABLED} if VT is not provisioned, nd
      *      * {@link ProvisioningManager#PROVISIONING_RESULT_UNKNOWN} if there is no value set.
      */
-    public static int getVtProvisioningConfig() {
+    public static int getVtProvisioningConfig(int subId) {
         try {
-            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(
-                    SubscriptionManager.getDefaultVoiceSubscriptionId());
+            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
             return pm.getProvisioningIntValue(
                     ProvisioningManager.KEY_VT_PROVISIONING_STATUS);
         } catch (Exception e) {
@@ -237,10 +229,9 @@ public class PresenceSetting {
      * {@link ProvisioningManager#PROVISIONING_VALUE_DISABLED} if EAB is not provisioned, nd
      *      * {@link ProvisioningManager#PROVISIONING_RESULT_UNKNOWN} if there is no value set.
      */
-    public static int getEabProvisioningConfig() {
+    public static int getEabProvisioningConfig(int subId) {
         try {
-            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(
-                    SubscriptionManager.getDefaultVoiceSubscriptionId());
+            ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
             return pm.getProvisioningIntValue(
                     ProvisioningManager.KEY_EAB_PROVISIONING_STATUS);
         } catch (Exception e) {
@@ -259,10 +250,14 @@ public class PresenceSetting {
             return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         }
         // This code does not support MSIM unfortunately, so only provide presence on the default
-        // subscription that the user chose.
-        int defaultSub = SubscriptionManager.getDefaultSubscriptionId();
+        // voice subscription that the user chose.
+        int defaultSub = SubscriptionManager.getDefaultVoiceSubscriptionId();
+        if (!SubscriptionManager.isValidSubscriptionId(defaultSub)) {
+            // The voice sub may not have been specified, in this case, use the default data.
+            defaultSub = SubscriptionManager.getDefaultDataSubscriptionId();
+        }
         // If the user has no default set, just pick the first as backup.
-        if (defaultSub == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+        if (!SubscriptionManager.isValidSubscriptionId(defaultSub)) {
             for (SubscriptionInfo info : infos) {
                 if (!info.isOpportunistic()) {
                     defaultSub = info.getSubscriptionId();
