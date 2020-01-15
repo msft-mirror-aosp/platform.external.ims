@@ -49,6 +49,7 @@ import android.telephony.ims.feature.MmTelFeature;
 import android.text.TextUtils;
 
 import com.android.ims.ResultCode;
+import com.android.ims.internal.ContactNumberUtils;
 import com.android.ims.internal.Logger;
 import com.android.service.ims.RcsSettingUtils;
 import com.android.service.ims.Task;
@@ -880,13 +881,73 @@ public class PresencePublication extends PresenceBase {
             mPublishingRequest.setTimestamp(System.currentTimeMillis());
         }
 
-        int ret = mPresencePublisher.requestPublication(presenceInfoBuilder.build());
-        if (ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE) {
-            mHasCachedTrigger = true;
-        } else {
-            //reset the cached trigger
-            mHasCachedTrigger = false;
+        String myUri = getUriForPublication();
+        if (myUri == null) {
+            logger.error("doPublish, myUri is null");
         }
+        String myNumber = getNumberFromUri(myUri);
+        int taskId = TaskManager.getDefault().addPublishTask(myNumber);
+        logger.print("doPublish, uri=" + myUri + ", myNumber=" + myNumber + ", taskId=" + taskId);
+        int ret = mPresencePublisher.requestPublication(presenceInfoBuilder.build(), myUri, taskId);
+        if (ret != ResultCode.SUCCESS) {
+            logger.print("doPublish, task=" + taskId + " failed with code=" + ret);
+            TaskManager.getDefault().removeTask(taskId);
+        }
+        // cache the latest publication request if temporarily not available.
+        mHasCachedTrigger = (ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE);
+    }
+
+    private String getNumberFromUri(String uriString) {
+        String number = Uri.parse(uriString).getSchemeSpecificPart();
+        String[] numberParts = number.split("[@;:]");
+
+        if (numberParts.length == 0) {
+            logger.error("getNumberFromUri: invalid uri=" + uriString);
+            return null;
+        }
+        return numberParts[0];
+    }
+
+    private String getUriForPublication() {
+        TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
+                Context.TELEPHONY_SERVICE);
+        if (teleMgr == null) {
+            logger.error("getUriForPublication, teleMgr = null");
+            return null;
+        }
+        teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
+
+        String myNumUri = null;
+        String myDomain = teleMgr.getIsimDomain();
+        logger.debug("myDomain=" + myDomain);
+        if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
+            String[] impu = teleMgr.getIsimImpu();
+
+            if(impu !=null){
+                for(int i=0; i<impu.length; i++){
+                    logger.debug("impu[" + i + "]=" + impu[i]);
+                    if(impu[i] != null && impu[i].startsWith("sip:") &&
+                            impu[i].endsWith(myDomain)){
+                        myNumUri = impu[i];
+                        break;
+                    }
+                }
+            }
+        }
+        String myNumber = null;
+        if (myNumUri != null) {
+            myNumber = Uri.parse(myNumUri).getSchemeSpecificPart();
+        }
+
+        if (myNumber == null) {
+            myNumber = ContactNumberUtils.getDefault().format(teleMgr.getLine1Number());
+            if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
+                myNumUri = "sip:" + myNumber + "@" + myDomain;
+            } else {
+                myNumUri = "tel:" + myNumber;
+            }
+        }
+        return myNumUri;
     }
 
     private PendingIntent mRetryAlarmIntent = null;
