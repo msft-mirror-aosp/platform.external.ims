@@ -105,19 +105,6 @@ public class CapabilityPolling {
                         RcsPresence.EXTRA_PUBLISH_STATE,
                         RcsPresence.PublishState.PUBLISH_STATE_NOT_PUBLISHED);
                 enqueuePublishStateChanged(state);
-            } else if(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED.equalsIgnoreCase(action)) {
-                int stateExtra = intent.getIntExtra(TelephonyManager.EXTRA_SIM_STATE,
-                        TelephonyManager.SIM_STATE_ABSENT);
-                int subId = intent.getIntExtra(SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX,
-                        SubscriptionManager.INVALID_SUBSCRIPTION_ID);
-                logger.print("SIM_CARD_STATE_CHANGED: " + stateExtra);
-                if (SubscriptionManager.isValidSubscriptionId(subId) &&
-                        (stateExtra == TelephonyManager.SIM_STATE_PRESENT)) {
-                    enqueueSimLoaded();
-                }
-            } else if (SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED
-                    .equalsIgnoreCase(action)) {
-                enqueueTryRegisterConfigCallback();
             } else {
                 logger.debug("No interest in this intent: " + action);
             }
@@ -139,7 +126,7 @@ public class CapabilityPolling {
         }
     };
 
-    private Runnable mRegisterCallbackRunnable = this::updateProvisioningManagerRegistration;
+    private Runnable mRegisterCallbackRunnable = this::tryProvisioningManagerRegistration;
 
     private static CapabilityPolling sInstance = null;
     public static synchronized CapabilityPolling getInstance(Context context) {
@@ -152,7 +139,6 @@ public class CapabilityPolling {
 
     private CapabilityPolling(Context context) {
         mContext = context;
-        PresenceSetting.init(mContext);
 
         ContactNumberUtils.getDefault().setContext(mContext);
         PresencePreferences.getInstance().setContext(mContext);
@@ -180,7 +166,7 @@ public class CapabilityPolling {
         if (mInitialized) {
             return;
         }
-        long capabilityPollInterval = PresenceSetting.getCapabilityPollInterval();
+        long capabilityPollInterval = PresenceSetting.getCapabilityPollInterval(mDefaultSubId);
         logger.print("getCapabilityPollInterval: " + capabilityPollInterval);
         if (capabilityPollInterval == -1) {
             capabilityPollInterval = mContext.getResources().getInteger(
@@ -190,7 +176,8 @@ public class CapabilityPolling {
             capabilityPollInterval = 10;
         }
 
-        long capabilityCacheExpiration = PresenceSetting.getCapabilityCacheExpiration();
+        long capabilityCacheExpiration =
+                PresenceSetting.getCapabilityCacheExpiration(mDefaultSubId);
         logger.print("getCapabilityCacheExpiration: " + capabilityCacheExpiration);
         if (capabilityCacheExpiration == -1) {
             capabilityCacheExpiration = mContext.getResources().getInteger(
@@ -200,11 +187,12 @@ public class CapabilityPolling {
             capabilityCacheExpiration = 10;
         }
 
-        int publishTimer = PresenceSetting.getPublishTimer();
+        int publishTimer = PresenceSetting.getPublishTimer(mDefaultSubId);
         logger.print("getPublishTimer: " + publishTimer);
-        int publishTimerExtended = PresenceSetting.getPublishTimerExtended();
+        int publishTimerExtended = PresenceSetting.getPublishTimerExtended(mDefaultSubId);
         logger.print("getPublishTimerExtended: " + publishTimerExtended);
-        int maxEntriesInRequest = PresenceSetting.getMaxNumberOfEntriesInRequestContainedList();
+        int maxEntriesInRequest =
+                PresenceSetting.getMaxNumberOfEntriesInRequestContainedList(mDefaultSubId);
         logger.print("getMaxNumberOfEntriesInRequestContainedList: " + maxEntriesInRequest);
         if ((capabilityPollInterval <= 30 * 60) ||     // default: 7 days
             (capabilityCacheExpiration <= 60 * 60) ||  // default: 90 days
@@ -236,7 +224,6 @@ public class CapabilityPolling {
         mDefaultSubId = PresenceSetting.getDefaultSubscriptionId();
 
         registerForBroadcasts();
-        mRegisterCallbackRunnable.run();
 
         if (isPollingReady()) {
             schedulePolling(5 * 1000, ACTION_POLLING_NORMAL);
@@ -262,43 +249,36 @@ public class CapabilityPolling {
         intentFilter.addAction(RcsManager.ACTION_RCS_SERVICE_UNAVAILABLE);
         intentFilter.addAction(RcsManager.ACTION_RCS_SERVICE_DIED);
         intentFilter.addAction(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
-        intentFilter.addAction(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED);
         intentFilter.addAction(SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED);
         mContext.registerReceiver(mReceiver, intentFilter);
     }
 
     private boolean isPollingReady() {
-        if (mPublished == -1) {
-            RcsManager rcsManager = RcsManager.getInstance(mContext, 0);
-            if (rcsManager != null) {
-                mStackAvailable = rcsManager.isRcsServiceAvailable();
-                logger.print("isPollingReady, mStackAvailable: " + mStackAvailable);
-                try {
-                    RcsPresence rcsPresence = rcsManager.getRcsPresenceInterface();
-                    if (rcsPresence != null) {
-                        int state = rcsPresence.getPublishState();
-                        mPublished = (PublishState.PUBLISH_STATE_200_OK == state) ? 1 : 0;
-                        logger.print("isPollingReady, mPublished: " + mPublished);
-                    }
-                } catch (RcsException ex) {
-                    logger.warn("RcsPresence.getPublishState failed, exception: " + ex);
-                    mPublished = -1;
+        RcsManager rcsManager = RcsManager.getInstance(mContext, 0);
+        if (rcsManager != null) {
+            mStackAvailable = rcsManager.isRcsServiceAvailable();
+            logger.print("isPollingReady, mStackAvailable: " + mStackAvailable);
+            try {
+                RcsPresence rcsPresence = rcsManager.getRcsPresenceInterface();
+                if (rcsPresence != null) {
+                    int state = rcsPresence.getPublishState();
+                    mPublished = (PublishState.PUBLISH_STATE_200_OK == state) ? 1 : 0;
+                    logger.print("isPollingReady, mPublished: " + mPublished);
                 }
+            } catch (RcsException ex) {
+                logger.warn("RcsPresence.getPublishState failed, exception: " + ex);
+                mPublished = -1;
             }
         }
 
-        if (mProvisioned == -1) {
-            try {
-                ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(
-                        SubscriptionManager.getDefaultVoiceSubscriptionId());
-                mProvisioned = pm.getProvisioningIntValue(
-                        ProvisioningManager.KEY_EAB_PROVISIONING_STATUS);
-            } catch (Exception e) {
-                logger.warn("isPollingReady, couldn't get ProvisioningManager, exception="
-                        + e.getMessage());
-                mProvisioned = -1;
-            }
+        try {
+            mProvisioned = PresenceSetting.getEabProvisioningConfig(mDefaultSubId);
+        } catch (Exception e) {
+            logger.warn("isPollingReady, couldn't get ProvisioningManager, exception="
+                    + e.getMessage());
+            mProvisioned = -1;
         }
+
         logger.print("isPollingReady, mProvisioned: " + mProvisioned +
                 ", mStackAvailable: " + mStackAvailable + ", mPublished: " + mPublished);
         return mStackAvailable && (mPublished == 1) && (mProvisioned == 1);
@@ -342,11 +322,11 @@ public class CapabilityPolling {
     }
 
     private void provisionStateChanged() {
-        boolean volteProvisioned = PresenceSetting.getVoLteProvisioningConfig() ==
+        boolean volteProvisioned = PresenceSetting.getVoLteProvisioningConfig(mDefaultSubId) ==
                 ProvisioningManager.PROVISIONING_VALUE_ENABLED;
-        boolean vtProvisioned = PresenceSetting.getVtProvisioningConfig() ==
+        boolean vtProvisioned = PresenceSetting.getVtProvisioningConfig(mDefaultSubId) ==
                 ProvisioningManager.PROVISIONING_VALUE_ENABLED;
-        boolean eabProvisioned = PresenceSetting.getEabProvisioningConfig() ==
+        boolean eabProvisioned = PresenceSetting.getEabProvisioningConfig(mDefaultSubId) ==
                 ProvisioningManager.PROVISIONING_VALUE_ENABLED;
         logger.print("Provision state changed, VolteProvision: "
                 + volteProvisioned + ", vtProvision: " + vtProvisioned
@@ -538,7 +518,7 @@ public class CapabilityPolling {
             PollingsQueue queue = PollingsQueue.getInstance(mContext);
             if (queue != null) {
                 queue.setCapabilityPolling(this);
-                queue.add(type, list);
+                queue.add(type, list, mDefaultSubId);
             }
         }
     }
@@ -663,9 +643,8 @@ public class CapabilityPolling {
     private static final int MSG_SERVICE_STATUS_CHANGED = 3;
     private static final int MSG_SETTINGS_CHANGED = 4;
     private static final int MSG_PUBLISH_STATE_CHANGED = 5;
-    private static final int MSG_SIM_LOADED = 6;
-    private static final int MSG_PROVISION_STATE_CHANGED = 7;
-    private static final int MSG_VERIFY_POLLING_RESULT = 8;
+    private static final int MSG_PROVISION_STATE_CHANGED = 6;
+    private static final int MSG_VERIFY_POLLING_RESULT = 7;
 
     public void enqueueDiscovery(int type) {
         mDiscoveryHandler.removeMessages(MSG_CHECK_DISCOVERY);
@@ -691,11 +670,6 @@ public class CapabilityPolling {
     public void enqueueSettingsChanged() {
         mDiscoveryHandler.removeMessages(MSG_SETTINGS_CHANGED);
         mDiscoveryHandler.obtainMessage(MSG_SETTINGS_CHANGED).sendToTarget();
-    }
-
-    private void enqueueSimLoaded() {
-        mDiscoveryHandler.removeMessages(MSG_SIM_LOADED);
-        mDiscoveryHandler.obtainMessage(MSG_SIM_LOADED).sendToTarget();
     }
 
     private void enqueueProvisionStateChanged() {
@@ -729,8 +703,6 @@ public class CapabilityPolling {
                 publishStateChanged(msg.arg1);
             } else if (msg.what == MSG_SETTINGS_CHANGED) {
                 settingsChanged();
-            } else if(msg.what == MSG_SIM_LOADED) {
-                onSimLoaded();
             } else if(msg.what == MSG_PROVISION_STATE_CHANGED) {
                 provisionStateChanged();
             } else if(msg.what == MSG_VERIFY_POLLING_RESULT) {
@@ -780,19 +752,15 @@ public class CapabilityPolling {
         pref.setSubscriberId("");
     }
 
-    private void onSimLoaded() {
-        // loading a new SIM may not change defaults. Trigger possible change of default.
-        enqueueTryRegisterConfigCallback();
-    }
-
     // Track the default subscription (the closest we can get to MSIM).
     // call from main thread only.
-    private void updateProvisioningManagerRegistration() {
-        int defaultSubId = PresenceSetting.getDefaultSubscriptionId();
-        if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+    public void handleDefaultSubscriptionChanged(int newDefaultSubId) {
+        logger.print("registerImsCallbacksAndSetAssociatedSubscription: new default= "
+                + newDefaultSubId);
+        if (!SubscriptionManager.isValidSubscriptionId(newDefaultSubId)) {
             return;
         }
-        if (mDefaultSubId == defaultSubId) {
+        if (mDefaultSubId == newDefaultSubId) {
             return;
         }
         // unregister old default first
@@ -800,8 +768,24 @@ public class CapabilityPolling {
             ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(mDefaultSubId);
             pm.unregisterProvisioningChangedCallback(mProvisioningManagerCallback);
         }
-        // register new default
-        mDefaultSubId = defaultSubId;
+        // register new default and clear old cached values in EAB only if we are changing the
+        // default sub ID.
+        if (SubscriptionManager.isValidSubscriptionId(newDefaultSubId)
+                && mEABContactManager != null) {
+            mEABContactManager.updateAllCapabilityToUnknown();
+        }
+        mDefaultSubId = newDefaultSubId;
+        SharedPrefUtil.saveLastUsedSubscriptionId(mContext, mDefaultSubId);
+        tryProvisioningManagerRegistration();
+        // Clear defaults and recalculate.
+        setDefaultSubscriberIds();
+        mProvisioned = -1;
+        enqueueSettingsChanged();
+        // load settings for new default.
+        enqueueProvisionStateChanged();
+    }
+
+    public void tryProvisioningManagerRegistration() {
         ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(mDefaultSubId);
         try {
             pm.registerProvisioningChangedCallback(mContext.getMainExecutor(),
@@ -809,18 +793,8 @@ public class CapabilityPolling {
         } catch (ImsException e) {
             if (e.getCode() == ImsException.CODE_ERROR_SERVICE_UNAVAILABLE) {
                 enqueueTryRegisterConfigCallback();
-                return;
             }
         }
-        // Clear defaults and recalculate.
-        setDefaultSubscriberIds();
-        if (mEABContactManager != null) {
-            mEABContactManager.updateAllCapabilityToUnknown();
-        }
-        mProvisioned = -1;
-        enqueueSettingsChanged();
-        // load settings for new default.
-        enqueueProvisionStateChanged();
     }
 
     private String getLine1Number() {
@@ -866,7 +840,7 @@ public class CapabilityPolling {
             return null;
         }
         telephony.createForSubscriptionId(subId);
-        String subscriberId = telephony.getSubscriberId(subId);
+        String subscriberId = telephony.getSubscriberId();
 
         logger.print("getSubscriberId: " + subscriberId);
         return subscriberId;
