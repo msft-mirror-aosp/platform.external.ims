@@ -40,9 +40,11 @@ public interface PresencePublisher {
     /**
      * Request that the specified capabilities are published to the network.
      * @param capabilities The capabilities to publish.
+     * @param contactUri The contactUri that will be used to publish capabilities.
+     * @param taskId The presence task associated with this request.
      * @return the result of requesting that the capabilities are published.
      */
-    int requestPublication(RcsContactUceCapability capabilities);
+    int requestPublication(RcsContactUceCapability capabilities, String contactUri, int taskId);
 
     /**
      * Notify the stack of the last publish or subscribe request result.

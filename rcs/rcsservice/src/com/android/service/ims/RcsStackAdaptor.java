@@ -45,11 +45,9 @@ import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.RcsContactUceCapability;
-import android.text.TextUtils;
 
 import com.android.ims.ResultCode;
 import com.android.ims.RcsPresence;
-import com.android.ims.internal.ContactNumberUtils;
 import com.android.ims.internal.Logger;
 import com.android.ims.internal.uce.common.CapInfo;
 import com.android.ims.internal.uce.common.StatusCode;
@@ -358,7 +356,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     }
 
     @Override
-    public int requestPublication(RcsContactUceCapability capabilities) {
+    public int requestPublication(RcsContactUceCapability capabilities, String myUri, int taskId) {
         logger.debug("requestPublication ...");
 
          // Don't use checkStackAndPublish()
@@ -368,55 +366,14 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
              logger.error("requestPublication ret=" + ret);
              return ret;
          }
-
-        TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
-            Context.TELEPHONY_SERVICE);
-        if (teleMgr == null) {
-            logger.error("teleMgr = null");
-            return ResultCode.PUBLISH_GENERIC_FAILURE;
-        }
-        teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
-
-        String myNumUri = null;
-        String myDomain = teleMgr.getIsimDomain();
-        logger.debug("myDomain=" + myDomain);
-        if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
-            String[] impu = teleMgr.getIsimImpu();
-
-            if(impu !=null){
-                for(int i=0; i<impu.length; i++){
-                    logger.debug("impu[" + i + "]=" + impu[i]);
-                    if(impu[i] != null && impu[i].startsWith("sip:") &&
-                            impu[i].endsWith(myDomain)){
-                        myNumUri = impu[i];
-                        break;
-                    }
-                }
-            }
-        }
-
-        String myNumber = PresenceInfoParser.getPhoneFromUri(myNumUri);
-
-        if (myNumber == null) {
-            myNumber = ContactNumberUtils.getDefault().format(teleMgr.getLine1Number());
-            if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
-                myNumUri = "sip:" + myNumber + "@" + myDomain;
-            } else {
-                myNumUri = "tel:" + myNumber;
-            }
-        }
-
-        logger.print("myNumUri=" + myNumUri + " myNumber=" + myNumber);
-        if (myNumUri == null || myNumber == null) {
+        if (myUri == null) {
             logger.error("Didn't find number or impu.");
             return ResultCode.PUBLISH_GENERIC_FAILURE;
         }
-
-        int taskId = TaskManager.getDefault().addPublishTask(myNumber);
         try {
             PresCapInfo pMyCapInfo = new PresCapInfo();
             // Fill cap info
-            pMyCapInfo.setContactUri(myNumUri);
+            pMyCapInfo.setContactUri(myUri);
 
             CapInfo capInfo = new CapInfo();
             capInfo.setIpVoiceSupported(capabilities.isCapable(
@@ -431,7 +388,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
 
             pMyCapInfo.setCapInfo(capInfo);
 
-            logger.print( "myNumUri = " + myNumUri
+            logger.print( "myNumUri = " + myUri
                     + " audioSupported =  " + capInfo.isIpVoiceSupported()
                     + " videoSupported=  " + capInfo.isIpVideoSupported()
                     );
@@ -447,14 +404,12 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
             logger.debug("requestPublication ret=" + ret);
             if (ret != ResultCode.SUCCESS) {
                 logger.error("requestPublication remove taskId=" + taskId);
-                TaskManager.getDefault().removeTask(taskId);
                 return ret;
             }
         } catch (RemoteException e) {
             e.printStackTrace();
             logger.error("Exception when call mStackPresService.getContactCap");
             logger.error("requestPublication remove taskId=" + taskId);
-            TaskManager.getDefault().removeTask(taskId);
 
             return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
         }
