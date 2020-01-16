@@ -38,6 +38,7 @@ import android.os.IBinder;
 import android.os.PersistableBundle;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
+import android.telephony.SubscriptionManager;
 
 import com.android.ims.internal.Logger;
 import com.android.internal.annotations.VisibleForTesting;
@@ -51,6 +52,7 @@ public class PollingService extends Service {
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
     private CapabilityPolling mCapabilityPolling = null;
+    private int mDefaultSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
     // not final for testing
     private BroadcastReceiver mReceiver = new BroadcastReceiver() {
@@ -62,9 +64,20 @@ public class PollingService extends Service {
                     checkAndUpdateCapabilityPollStatus();
                     break;
                 }
+                case SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED: {
+                    handleDefaultSubChanged();
+                }
             }
         }
     };
+
+    private SubscriptionManager.OnSubscriptionsChangedListener mSubChangedListener =
+            new SubscriptionManager.OnSubscriptionsChangedListener() {
+                @Override
+                public void onSubscriptionsChanged() {
+                    handleDefaultSubChanged();
+                }
+            };
 
     /**
      * Constructor
@@ -76,10 +89,14 @@ public class PollingService extends Service {
     @Override
     public void onCreate() {
         logger.debug("onCreate()");
+        PresenceSetting.init(this);
 
         registerBroadcastReceiver();
-        // Check when the service starts in case the SIM info has already been loaded.
-        checkAndUpdateCapabilityPollStatus();
+        SubscriptionManager subscriptionManager = getSystemService(SubscriptionManager.class);
+        // This will always call onSubscriptionsChanged when it is added, which will possibly
+        // start polling.
+        subscriptionManager.addOnSubscriptionsChangedListener(getMainExecutor(),
+                mSubChangedListener);
     }
 
     /**
@@ -93,7 +110,8 @@ public class PollingService extends Service {
             mCapabilityPolling.stop();
             mCapabilityPolling = null;
         }
-
+        SubscriptionManager subscriptionManager = getSystemService(SubscriptionManager.class);
+        subscriptionManager.removeOnSubscriptionsChangedListener(mSubChangedListener);
         unregisterReceiver(mReceiver);
 
         super.onDestroy();
@@ -102,12 +120,6 @@ public class PollingService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         logger.debug("onBind(), intent: " + intent);
-
-        if (!isRcsSupported(this)) {
-            return null;
-        }
-
-        logger.debug("onBind add services here");
         return null;
     }
 
@@ -118,12 +130,41 @@ public class PollingService extends Service {
 
     private void registerBroadcastReceiver() {
         IntentFilter filter = new IntentFilter(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
+        filter.addAction(SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED);
         registerReceiver(mReceiver, filter);
+    }
+
+    private void handleDefaultSubChanged() {
+        int defaultSubId = PresenceSetting.getDefaultSubscriptionId();
+        if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            return;
+        }
+        // First, check to see if there is no default set, but there is a saved default sub id.
+        // this can happen when the phone is rebooted. If the SIM card stays the same, we do not
+        // want to clear the EAB contact cache and requery every time the phone reboots.
+        if (!SubscriptionManager.isValidSubscriptionId(mDefaultSubId)) {
+            int eabContactSubId = SharedPrefUtil.getLastUsedSubscriptionId(this);
+            if (SubscriptionManager.isValidSubscriptionId(mDefaultSubId)) {
+                mDefaultSubId = eabContactSubId;
+            }
+        }
+        if (mDefaultSubId == defaultSubId) {
+            return;
+        }
+        mDefaultSubId = defaultSubId;
+        logger.print("handleDefaultSubChanged: new default= " + defaultSubId);
+        SharedPrefUtil.saveLastUsedSubscriptionId(this, mDefaultSubId);
+
+        if (mCapabilityPolling != null) {
+            mCapabilityPolling.handleDefaultSubscriptionChanged(defaultSubId);
+        }
+
+        checkAndUpdateCapabilityPollStatus();
     }
 
     private void checkAndUpdateCapabilityPollStatus() {
         // If the carrier doesn't support RCS Presence, stop polling.
-        if (!isRcsSupportedByCarrier(this)) {
+        if (!isRcsSupportedByCarrier()) {
             logger.info("RCS not supported by carrier. Stopping CapabilityPolling");
             if (mCapabilityPolling != null) {
                 mCapabilityPolling.stop();
@@ -139,14 +180,10 @@ public class PollingService extends Service {
         }
     }
 
-    static boolean isRcsSupported(Context context) {
-        return isRcsSupportedByDevice() && isRcsSupportedByCarrier(context);
-    }
-
-    private static boolean isRcsSupportedByCarrier(Context context) {
-        CarrierConfigManager configManager = context.getSystemService(CarrierConfigManager.class);
+    private boolean isRcsSupportedByCarrier() {
+        CarrierConfigManager configManager = getSystemService(CarrierConfigManager.class);
         if (configManager != null) {
-            PersistableBundle b = configManager.getConfig();
+            PersistableBundle b = configManager.getConfigForSubId(mDefaultSubId);
             if (b != null) {
                 return b.getBoolean(CarrierConfigManager.KEY_USE_RCS_PRESENCE_BOOL, false);
             }
@@ -154,7 +191,7 @@ public class PollingService extends Service {
         return true;
     }
 
-    public static boolean isRcsSupportedByDevice() {
+    static boolean isRcsSupportedByDevice() {
         String rcsSupported = SystemProperties.get("persist.rcs.supported");
         return "1".equals(rcsSupported);
     }

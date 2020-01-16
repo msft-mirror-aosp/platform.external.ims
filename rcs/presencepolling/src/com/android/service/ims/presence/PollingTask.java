@@ -52,6 +52,7 @@ public class PollingTask {
     public long mId;
     public int mType;
     public List<Contacts.Item> mContacts = new ArrayList<Contacts.Item>();
+    public int mSubId;
 
     private long mTimeUnit;
     private int mTotalRetry;
@@ -61,9 +62,10 @@ public class PollingTask {
     private boolean mCancelled = false;
     private boolean mCompleted = false;
 
-    public PollingTask(int type, List<Contacts.Item> list) {
+    public PollingTask(int type, List<Contacts.Item> list, int subId) {
         mId = sMaxId++;
         mType = type;
+        mSubId = subId;
 
         mContacts.clear();
         for(int i = 0; i < list.size(); i++) {

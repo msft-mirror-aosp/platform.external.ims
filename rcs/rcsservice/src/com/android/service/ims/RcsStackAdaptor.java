@@ -41,7 +41,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.SystemClock;
-import android.os.SystemProperties;
+import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.RcsContactUceCapability;
@@ -108,7 +108,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     private static final int PRESENCE_INIT_TYPE_RETRY = 2;
 
     // The initialization was triggered by retry.
-    private static final int PRESENCE_INIT_TYPE_IMS_REGISTERED = 3;
+    private static final int PRESENCE_INIT_TYPE_SUB_CHANGED = 3;
 
     // The maximum retry count for initializing the stack service.
     private static final int MAX_RETRY_COUNT = 6;//Maximum time is 64s
@@ -147,6 +147,12 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     // The singleton.
     private static RcsStackAdaptor sInstance = null;
 
+    // the subscription on MSIM devices that is used for presence, since there is no MSIM support.
+    private int mAssociatedSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+
+    // Only start connecting to the stack after we have received ACTION_UCE_SERVICE_UP.
+    private boolean mStackAvailable = false;
+
     // Constructor
     private RcsStackAdaptor(Context context) {
         mContext = context;
@@ -162,7 +168,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
         return sInstance;
     }
 
-    private Handler mMsgHandler = new Handler() {
+    private Handler mMsgHandler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(Message msg) {
             super.handleMessage(msg);
@@ -177,6 +183,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
             switch (msg.what) {
                 case PRESENCE_INIT_IMS_UCE_SERVICE:
                     logger.debug("handleMessage  msg=PRESENCE_INIT_IMS_UCE_SERVICE" );
+                    registerBroadcastReceiver();
                     doInitImsUceService();
                 break;
 
@@ -190,9 +197,33 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
         return mListenerHandler;
     }
 
+    public void handleAssociatedSubscriptionChanged(int newSubId) {
+        synchronized (mSyncObj) {
+            if (mAssociatedSubscription == newSubId) {
+                return;
+            }
+            mAssociatedSubscription = newSubId;
+
+            if (!SubscriptionManager.isValidSubscriptionId(mAssociatedSubscription)) {
+                destroyStackConnection();
+                return;
+            }
+
+            SubscriptionManager subscriptionManager = mContext.getSystemService(
+                    SubscriptionManager.class);
+            if (subscriptionManager == null) {
+                logger.error("handleAssociatedSubscriptionChanged: error getting sub manager");
+                return;
+            }
+            if (mStackAvailable) {
+                startInitPresenceTimer(0, PRESENCE_INIT_TYPE_SUB_CHANGED);
+            }
+        }
+    }
+
     @Override
     public int getStackStatusForCapabilityRequest() {
-        if (!RcsSettingUtils.getCapabilityDiscoveryEnabled(mContext)) {
+        if (!RcsSettingUtils.getCapabilityDiscoveryEnabled(mAssociatedSubscription)) {
             logger.error("getCapabilityDiscoveryEnabled = false");
             return ResultCode.ERROR_SERVICE_NOT_ENABLED;
         }
@@ -226,8 +257,6 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
             logger.print("mPublishingState=" + mPublishingState + " publishState=" + publishState);
             mPublishingState = publishState;
         }
-        // save it for recovery when PresenceService crash.
-        SystemProperties.set("rcs.publish.status", String.valueOf(publishState));
         Intent publishIntent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
         publishIntent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
         // Start PersistService and broadcast to other receivers that are listening
@@ -245,7 +274,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
 
     private int checkStackStatus() {
         synchronized (mSyncObj) {
-            if (!RcsSettingUtils.isEabProvisioned(mContext)) {
+            if (!RcsSettingUtils.isEabProvisioned(mContext, mAssociatedSubscription)) {
                 logger.error("Didn't get EAB provisioned by DM");
                 return ResultCode.ERROR_SERVICE_NOT_ENABLED;
             }
@@ -346,6 +375,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
             logger.error("teleMgr = null");
             return ResultCode.PUBLISH_GENERIC_FAILURE;
         }
+        teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
 
         String myNumUri = null;
         String myDomain = teleMgr.getIsimDomain();
@@ -390,7 +420,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
 
             CapInfo capInfo = new CapInfo();
             capInfo.setIpVoiceSupported(capabilities.isCapable(
-                    RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL));
+                    RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL));
             capInfo.setIpVideoSupported(capabilities.isCapable(
                     RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL));
             capInfo.setCdViaPresenceSupported(true);
@@ -455,14 +485,9 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
         mMsgHandler.sendMessage(reinitMessage);
     }
 
-    private void doInitImsUceService(){
+    private void registerBroadcastReceiver() {
         synchronized (mSyncObj) {
-            logger.debug("doInitImsUceService");
-
-            if (mStackService != null) {
-                logger.debug("doInitImsUceService mStackService != null");
-                return;
-            }
+            logger.debug("registerBroadcastReceiver");
 
             IntentFilter filter = new IntentFilter();
             filter.addAction(ImsUceManager.ACTION_UCE_SERVICE_UP);
@@ -475,8 +500,10 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
                     logger.print("onReceive intent " + intent);
                     String action = intent.getAction();
                     if (ImsUceManager.ACTION_UCE_SERVICE_UP.equals(action)) {
+                        mStackAvailable = true;
                         startInitPresenceTimer(0, PRESENCE_INIT_TYPE_RCS_SERVICE_AVAILABLE);
                     } else if (ImsUceManager.ACTION_UCE_SERVICE_DOWN.equals(action)) {
+                        mStackAvailable = false;
                         clearImsUceService();
                     } else {
                         logger.debug("unknown intent " + intent);
@@ -485,10 +512,18 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
             };
 
             mContext.registerReceiver(mRcsServiceReceiver, filter);
+        }
+    }
+
+    private void doInitImsUceService(){
+        synchronized (mSyncObj) {
+            if (mStackService != null) {
+                logger.debug("registerBroadcastReceiver mStackService != null");
+                return;
+            }
 
             if (mImsUceManager == null) {
-                mImsUceManager = ImsUceManager.getInstance(mContext,
-                        SubscriptionManager.from(mContext).getDefaultDataPhoneId());
+                mImsUceManager = ImsUceManager.getInstance(mContext);
                 if (mImsUceManager == null) {
                     logger.error("Can't init mImsUceManager");
                     return;
@@ -514,53 +549,45 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     int initAllSubRcsServices(IUceService uceService, int currentRetry) {
         int ret = -1;
         synchronized (mSyncObj) {
-            // we could receive useless retry since we could fail to cancel the retry timer.
-            // We need to ignore such retry if the sub service had been initialized already.
-            if(mStackPresService != null && currentRetry>0){
-                logger.debug("mStackPresService != null and currentRetry=" + currentRetry +
-                        " ignore it");
-                return 0;
-            }
-
-            logger.debug("Init All Services Under RCS uceService=" + uceService);
-            if(uceService == null){
-                logger.error("initAllServices : uceService is NULL  ");
+            logger.print("Create UCE service connection for sub " + mAssociatedSubscription);
+            if (uceService == null) {
+                logger.error("initAllSubRcsServices : uceService is NULL");
                 mIsIniting = false;
                 mLastInitSubService = -1;
                 return ret;
             }
 
             try {
-                if(mStackPresService != null){
-                    logger.print("RemoveListener and QRCSDestroyPresService");
-                    mStackPresService.removeListener(mStackPresenceServiceHandle,
-                            mListenerHandle);
-                    uceService.destroyPresenceService(mStackPresenceServiceHandle);
+                destroyStackConnection();
 
-                    mStackPresService = null;
+                if (!SubscriptionManager.isValidSubscriptionId(mAssociatedSubscription)) {
+                    logger.print("initAllService : invalid sub id, stopping creation...");
+                    mIsIniting = false;
+                    mLastInitSubService = -1;
+                    // Do not create a new presence service for invalid sub id.
+                    return 0;
                 }
 
-                boolean serviceStatus = false;
-                serviceStatus = uceService.getServiceStatus();
+                boolean serviceAvailable;
+                serviceAvailable = uceService.getServiceStatus();
                 //init only once and ensure connection to UCE  service is available.
-                if (true == serviceStatus && mStackPresService == null && mStackService != null) {
-                    logger.print("initAllService : serviceStatus =  true ");
-                    logger.debug("Create PresService");
-                    mStackPresenceServiceHandle = mStackService.createPresenceService(
-                            mListenerHandler.mPresenceListener, mListenerHandle);
+                if (serviceAvailable && mStackPresService == null && mStackService != null) {
+                    logger.print("initAllSubRcsServices : create ");
+                    int handle = createStackConnection();
+                    logger.print("initAllSubRcsServices: handle=" + mStackPresenceServiceHandle +
+                            ", service=" + mStackPresService);
                     // If the service handle is -1, then creating the service failed somehow.
                     // schedule a retry.
-                    if (mStackPresenceServiceHandle < 0) {
+                    if (handle < 0) {
                         logger.error("initAllService : service handle < 0, retrying...");
                         mIsIniting = false;
                         mLastInitSubService = -1;
                         return ret;
                     }
-                    mStackPresService = mStackService.getPresenceService();
                     ret = 0;
                  } else {
                     logger.error("initAllService : serviceStatus =  false - serviceStatus: "
-                            + serviceStatus + ", mStackPresService: " + mStackPresService
+                            + serviceAvailable + ", mStackPresService: " + mStackPresService
                             + ", mStackService: " + mStackService);
                 }
             } catch (RemoteException e) {
@@ -570,6 +597,63 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
             mIsIniting = false;
         }
         return ret;
+    }
+
+    private void destroyStackConnection() {
+        synchronized (mSyncObj) {
+            try {
+                if (mStackPresService != null) {
+                    logger.print("RemoveListener and presence service");
+                    mStackPresService.removeListener(mStackPresenceServiceHandle,
+                            mListenerHandle);
+                }
+                if (mStackService != null) {
+                    mStackService.destroyPresenceService(mStackPresenceServiceHandle);
+                }
+                mStackPresService = null;
+            } catch (RemoteException e) {
+                logger.error("destroyStackConnection :  exception " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private int createStackConnection() throws RemoteException {
+        TelephonyManager tm = mContext.getSystemService(TelephonyManager.class);
+        SubscriptionManager sm = mContext.getSystemService(SubscriptionManager.class);
+        if (tm == null) return -1;
+        if (sm == null) return -1;
+        SubscriptionInfo info = sm.getActiveSubscriptionInfo(mAssociatedSubscription);
+        if (info == null) {
+            logger.error("handleAssociatedSubscriptionChanged: sub id does not have valid info");
+            return -1;
+        }
+        String associatedIccId = info.getIccId();
+        boolean isMsim = tm.getSupportedModemCount() > 1;
+        synchronized (mSyncObj) {
+            if (isMsim) {
+                mStackPresenceServiceHandle = mStackService.createPresenceServiceForSubscription(
+                        mListenerHandler.mPresenceListener, mListenerHandle, associatedIccId);
+            } else {
+                // createPresenceServiceForSubscription doesnt seem to work on older single sim
+                // devices. Use deprecated API for these devices.
+                mStackPresenceServiceHandle = mStackService.createPresenceService(
+                        mListenerHandler.mPresenceListener, mListenerHandle);
+            }
+            // If the service handle is -1, then creating the service failed somehow.
+            if (mStackPresenceServiceHandle < 0) {
+                return mStackPresenceServiceHandle;
+            }
+            if (isMsim) {
+                mStackPresService = mStackService.getPresenceServiceForSubscription(
+                        associatedIccId);
+            } else {
+                // getPresenceServiceForSubscription doesnt seem to work on older single SIM
+                // devices. Use deprecated API for these devices.
+                mStackPresService = mStackService.getPresenceService();
+            }
+            return mStackPresenceServiceHandle;
+        }
     }
 
     public void startInitThread(int times){
@@ -610,12 +694,6 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
         initImsUceService();
 
         setInPowerDown(false);
-        try {
-            // Restore the previous value in case the process has crashed.
-            updatePublisherState(Integer.parseInt(SystemProperties.get("rcs.publish.status", "1")));
-        } catch (NumberFormatException e) {
-            // do nothing and use the default.
-        }
         logger.debug("init finished");
     }
 
@@ -669,8 +747,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
                     " mStackService=" + mStackService);
 
             if (mImsUceManager == null) {
-                mImsUceManager = ImsUceManager.getInstance(mContext,
-                        SubscriptionManager.from(mContext).getDefaultDataPhoneId());
+                mImsUceManager = ImsUceManager.getInstance(mContext);
                 if (mImsUceManager == null) {
                     logger.error("Can't init mImsUceManager");
                     return;
@@ -687,23 +764,10 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     }
 
     private void clearImsUceService() {
-        synchronized (mSyncObj) {
-            try {
-                logger.info("clearImsUceService: removing listener and presence service.");
-                if (mStackPresService != null) {
-                    mStackPresService.removeListener(mStackPresenceServiceHandle,
-                            mListenerHandle);
-                }
-                if (mStackService != null) {
-                    mStackService.destroyPresenceService(mStackPresenceServiceHandle);
-                }
-            } catch (RemoteException e) {
-                logger.warn("clearImsUceService: Couldn't clean up stack service");
-            }
-            mImsUceManager = null;
-            mStackService = null;
-            mStackPresService = null;
-        }
+        destroyStackConnection();
+        mImsUceManager = null;
+        mStackService = null;
+        mStackPresService = null;
     }
 
     public void finish() {
