@@ -192,7 +192,9 @@ public class PresencePublication extends PresenceBase {
             String[] configRcsProvisionErrorOnPublishResponse) {
         super(context);
         logger.debug("PresencePublication constrcuct");
-        this.mPresencePublisher = presencePublisher;
+        synchronized(mSyncObj) {
+            this.mPresencePublisher = presencePublisher;
+        }
         mConfigVolteProvisionErrorOnPublishResponse = configVolteProvisionErrorOnPublishResponse;
         mConfigRcsProvisionErrorOnPublishResponse = configRcsProvisionErrorOnPublishResponse;
 
@@ -207,6 +209,22 @@ public class PresencePublication extends PresenceBase {
         logger.debug("The current TTY mode is: " + mPreferredTtyMode);
 
         sPresencePublication = this;
+    }
+
+    public void updatePresencePublisher(int subId, PresencePublisher presencePublisher) {
+        synchronized(mSyncObj) {
+            logger.debug("Update PresencePublisher: subId=" + subId);
+            this.mPresencePublisher = presencePublisher;
+        }
+        handleAssociatedSubscriptionChanged(subId);
+    }
+
+    public void removePresencePublisher(int subId) {
+        synchronized(mSyncObj) {
+            logger.debug("Remove PresencePublisher: subId=" + subId);
+            this.mPresencePublisher = null;
+        }
+        handleAssociatedSubscriptionChanged(subId);
     }
 
     private void requestPublishIfSubscriptionReady() {
@@ -463,8 +481,13 @@ public class PresencePublication extends PresenceBase {
      * @return The result of the last Publish request.
      */
     public @PresenceBase.PresencePublishState int getPublishState() {
-        if (mPresencePublisher != null) {
-            return mPresencePublisher.getPublisherState();
+        PresencePublisher presencePublisher = null;
+        synchronized(mSyncObj) {
+            presencePublisher = mPresencePublisher;
+        }
+
+        if (presencePublisher != null) {
+            return presencePublisher.getPublisherState();
         }
         return PUBLISH_STATE_NOT_PUBLISHED;
     }
@@ -473,8 +496,13 @@ public class PresencePublication extends PresenceBase {
      * @param publishState The result of the last publish request.
      */
     public void setPublishState(int publishState) {
-        if (mPresencePublisher != null) {
-            mPresencePublisher.updatePublisherState(publishState);
+        PresencePublisher presencePublisher = null;
+        synchronized(mSyncObj) {
+            presencePublisher = mPresencePublisher;
+        }
+
+        if (presencePublisher != null) {
+            presencePublisher.updatePublisherState(publishState);
         }
     }
 
@@ -789,7 +817,12 @@ public class PresencePublication extends PresenceBase {
             return;
         }
 
-        if (mPresencePublisher == null) {
+        PresencePublisher presencePublisher = null;
+        synchronized(mSyncObj) {
+            presencePublisher = mPresencePublisher;
+        }
+
+        if (presencePublisher == null) {
             logger.error("mPresencePublisher == null");
             return;
         }
@@ -816,8 +849,8 @@ public class PresencePublication extends PresenceBase {
                         (mPublishingRequest == null) &&
                         publishRequest.hasSamePublishContent(mPublishedRequest)) &&
                 (getPublishState() != PUBLISH_STATE_NOT_PUBLISHED)) {
-            logger.print("Don't need publish since the capability didn't change publishRequest " +
-                    publishRequest + " getPublishState()=" + getPublishState());
+            logger.print("Don't need publish since the capability didn't change publishRequest "
+                    + publishRequest + " getPublishState()=" + getPublishState());
             return;
         }
 
@@ -852,18 +885,18 @@ public class PresencePublication extends PresenceBase {
         // That will tell other phone that it has no volte/vt capability.
         if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mAssociatedSubscription) &&
                 getPublishState() != PUBLISH_STATE_NOT_PUBLISHED) {
-             // volte was not enabled.
-             // or it is turnning off volte. lower layer should unpublish
-             reset();
-             return;
+            // volte was not enabled.
+            // or it is turnning off volte. lower layer should unpublish
+            reset();
+            return;
         }
 
         TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
                 Context.TELEPHONY_SERVICE);
         teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
         if (teleMgr == null) {
-             logger.error("TelephonyManager not available.");
-             return;
+            logger.error("TelephonyManager not available.");
+            return;
         }
         Uri contactUri = Uri.fromParts(PhoneAccount.SCHEME_TEL, teleMgr.getLine1Number(), null);
 
@@ -888,7 +921,8 @@ public class PresencePublication extends PresenceBase {
         String myNumber = getNumberFromUri(myUri);
         int taskId = TaskManager.getDefault().addPublishTask(myNumber);
         logger.print("doPublish, uri=" + myUri + ", myNumber=" + myNumber + ", taskId=" + taskId);
-        int ret = mPresencePublisher.requestPublication(presenceInfoBuilder.build(), myUri, taskId);
+
+        int ret = presencePublisher.requestPublication(presenceInfoBuilder.build(), myUri, taskId);
         if (ret != ResultCode.SUCCESS) {
             logger.print("doPublish, task=" + taskId + " failed with code=" + ret);
             TaskManager.getDefault().removeTask(taskId);
