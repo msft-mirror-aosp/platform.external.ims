@@ -47,6 +47,7 @@ public class PresenceSubscriber extends PresenceBase {
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
     private SubscribePublisher mSubscriber;
+    private final Object mSubscriberLock = new Object();
 
     private String mAvailabilityRetryNumber = null;
     private int mAssociatedSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
@@ -61,10 +62,28 @@ public class PresenceSubscriber extends PresenceBase {
             String[] configVolteProvisionErrorOnSubscribeResponse,
             String[] configRcsProvisionErrorOnSubscribeResponse){
         super(context);
-        mSubscriber = subscriber;
+        synchronized(mSubscriberLock) {
+            this.mSubscriber = subscriber;
+        }
         mConfigVolteProvisionErrorOnSubscribeResponse
                 = configVolteProvisionErrorOnSubscribeResponse;
         mConfigRcsProvisionErrorOnSubscribeResponse = configRcsProvisionErrorOnSubscribeResponse;
+    }
+
+    public void updatePresenceSubscriber(int subId, SubscribePublisher subscriber) {
+        synchronized(mSubscriberLock) {
+            logger.print("Update PresencePublisher: subId=" + subId);
+            this.mSubscriber = subscriber;
+        }
+        handleAssociatedSubscriptionChanged(subId);
+    }
+
+    public void removePresenceSubscriber(int subId) {
+        synchronized(mSubscriberLock) {
+                logger.print("Remove PresencePublisher: subId=" + subId);
+            this.mSubscriber = null;
+        }
+        handleAssociatedSubscriptionChanged(subId);
     }
 
     public void handleAssociatedSubscriptionChanged(int newSubId) {
@@ -105,7 +124,17 @@ public class PresenceSubscriber extends PresenceBase {
     public int requestCapability(List<String> contactsNumber,
             ContactCapabilityResponse listener) {
 
-        int ret = mSubscriber.getStackStatusForCapabilityRequest();
+        SubscribePublisher subscriber = null;
+        synchronized(mSubscriberLock) {
+            subscriber = mSubscriber;
+        }
+
+        if (subscriber == null) {
+            logger.error("requestCapability Subscribe not registered");
+            return ResultCode.SUBSCRIBE_NOT_REGISTERED;
+        }
+
+        int ret = subscriber.getStackStatusForCapabilityRequest();
         if (ret < ResultCode.SUCCESS) {
             logger.error("requestCapability ret=" + ret);
             return ret;
@@ -150,7 +179,7 @@ public class PresenceSubscriber extends PresenceBase {
                 listener, timeout);
         logger.print("taskId=" + taskId);
 
-        ret = mSubscriber.requestCapability(formatedContacts, taskId);
+        ret = subscriber.requestCapability(formatedContacts, taskId);
         if(ret < ResultCode.SUCCESS) {
             logger.error("requestCapability ret=" + ret + " remove taskId=" + taskId);
             TaskManager.getDefault().removeTask(taskId);
@@ -203,7 +232,17 @@ public class PresenceSubscriber extends PresenceBase {
             return ResultCode.ERROR_SERVICE_NOT_AVAILABLE;
         }
 
-        ret = mSubscriber.getStackStatusForCapabilityRequest();
+        SubscribePublisher subscriber = null;
+        synchronized(mSubscriberLock) {
+            subscriber = mSubscriber;
+        }
+
+        if (subscriber == null) {
+            logger.error("requestAvailability Subscribe not registered");
+            return ResultCode.SUBSCRIBE_NOT_REGISTERED;
+        }
+
+        ret = subscriber.getStackStatusForCapabilityRequest();
         if (ret < ResultCode.SUCCESS) {
             logger.error("requestAvailability=" + ret);
             return ret;
@@ -217,7 +256,7 @@ public class PresenceSubscriber extends PresenceBase {
 
         logger.print("addAvailabilityTask formatedContact=" + formatedContact);
 
-        ret = mSubscriber.requestAvailability(formatedContact, taskId);
+        ret = subscriber.requestAvailability(formatedContact, taskId);
         if (ret < ResultCode.SUCCESS) {
             logger.error("requestAvailability ret=" + ret + " remove taskId=" + taskId);
             TaskManager.getDefault().removeTask(taskId);
@@ -329,26 +368,36 @@ public class PresenceSubscriber extends PresenceBase {
     }
 
     public void onSipResponse(int requestId, int responseCode, String reasonPhrase) {
+        SubscribePublisher subscriber = null;
+        synchronized(mSubscriberLock) {
+            subscriber = mSubscriber;
+        }
+
         if(isInConfigList(responseCode, reasonPhrase,
                 mConfigVolteProvisionErrorOnSubscribeResponse)) {
             logger.print("volte provision sipCode=" + responseCode + " phrase=" + reasonPhrase);
-            mSubscriber.updatePublisherState(PUBLISH_STATE_VOLTE_PROVISION_ERROR);
+            if (subscriber != null) {
+                subscriber.updatePublisherState(PUBLISH_STATE_VOLTE_PROVISION_ERROR);
+            }
 
             notifyDm();
         } else if(isInConfigList(responseCode, reasonPhrase,
                 mConfigRcsProvisionErrorOnSubscribeResponse)) {
             logger.print("rcs proRcsPresence.vision sipCode=" + responseCode + " phrase="
                     + reasonPhrase);
-            mSubscriber.updatePublisherState(PUBLISH_STATE_RCS_PROVISION_ERROR);
+            if (subscriber != null) {
+                subscriber.updatePublisherState(PUBLISH_STATE_RCS_PROVISION_ERROR);
+            }
         }
 
         int errorCode = translateResponseCode(responseCode, reasonPhrase);
         logger.print("handleSipResponse errorCode=" + errorCode);
 
         if(errorCode == ResultCode.SUBSCRIBE_NOT_REGISTERED){
-            logger.debug("setPublishState to unknown" +
-                   " for subscribe error 403 not registered");
-            mSubscriber.updatePublisherState(PUBLISH_STATE_OTHER_ERROR);
+            logger.debug("setPublishState to unknown for subscribe error 403 not registered");
+            if (subscriber != null) {
+                subscriber.updatePublisherState(PUBLISH_STATE_OTHER_ERROR);
+            }
         }
 
         if(errorCode == ResultCode.SUBSCRIBE_NOT_AUTHORIZED_FOR_PRESENCE) {
