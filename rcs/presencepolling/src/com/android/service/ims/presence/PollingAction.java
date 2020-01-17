@@ -110,7 +110,8 @@ public class PollingAction extends AsyncTask<Void, Integer, Integer> {
             Looper.prepare();
         }
 
-        int requestExpiration = PresenceSetting.getCapabilityPollListSubscriptionExpiration();
+        int requestExpiration = PresenceSetting.getCapabilityPollListSubscriptionExpiration(
+                mPollingTask.mSubId);
         logger.print("getCapabilityPollListSubscriptionExpiration: " + requestExpiration);
         if (requestExpiration == -1) {
             requestExpiration = 30;

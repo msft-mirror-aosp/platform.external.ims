@@ -29,6 +29,7 @@
 package com.android.service.ims.presence;
 
 import android.content.Context;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.RcsContactUceCapability;
 import android.text.TextUtils;
@@ -48,6 +49,7 @@ public class PresenceSubscriber extends PresenceBase {
     private SubscribePublisher mSubscriber;
 
     private String mAvailabilityRetryNumber = null;
+    private int mAssociatedSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
     private final String[] mConfigVolteProvisionErrorOnSubscribeResponse;
     private final String[] mConfigRcsProvisionErrorOnSubscribeResponse;
@@ -63,6 +65,13 @@ public class PresenceSubscriber extends PresenceBase {
         mConfigVolteProvisionErrorOnSubscribeResponse
                 = configVolteProvisionErrorOnSubscribeResponse;
         mConfigRcsProvisionErrorOnSubscribeResponse = configRcsProvisionErrorOnSubscribeResponse;
+    }
+
+    public void handleAssociatedSubscriptionChanged(int newSubId) {
+        if (mAssociatedSubscription == newSubId) {
+            return;
+        }
+        mAssociatedSubscription = newSubId;
     }
 
     private String numberToUriString(String number) {
@@ -108,7 +117,7 @@ public class PresenceSubscriber extends PresenceBase {
         }
 
         logger.debug("check contact size ...");
-        if(contactsNumber.size() > RcsSettingUtils.getMaxNumbersInRCL(mContext)){
+        if (contactsNumber.size() > RcsSettingUtils.getMaxNumbersInRCL(mAssociatedSubscription)) {
             ret = ResultCode.SUBSCRIBE_TOO_LARGE;
             logger.error("requestCapability contctNumber size=" + contactsNumber.size());
             return ret;
@@ -126,8 +135,8 @@ public class PresenceSubscriber extends PresenceBase {
             formatedContacts[i] = numberToTelString(formatedNumbers[i]);
         }
         // In ms
-        long timeout = RcsSettingUtils.getCapabPollListSubExp(mContext) * 1000;
-        timeout += RcsSettingUtils.getSIPT1Timer(mContext);
+        long timeout = RcsSettingUtils.getCapabPollListSubExp(mAssociatedSubscription) * 1000;
+        timeout += RcsSettingUtils.getSIPT1Timer(mAssociatedSubscription);
 
         // The terminal notification may be received shortly after the time limit of
         // the subscription due to network delays or retransmissions.
@@ -163,7 +172,8 @@ public class PresenceSubscriber extends PresenceBase {
 
         if(!forceToNetwork){
             logger.debug("check if we can use the value in cache");
-            int availabilityExpire = RcsSettingUtils.getAvailabilityCacheExpiration(mContext);
+            int availabilityExpire =
+                    RcsSettingUtils.getAvailabilityCacheExpiration(mAssociatedSubscription);
             availabilityExpire = availabilityExpire>0?availabilityExpire*1000:
                     60*1000; // by default is 60s
             logger.print("requestAvailability availabilityExpire=" + availabilityExpire);
@@ -327,7 +337,8 @@ public class PresenceSubscriber extends PresenceBase {
             notifyDm();
         } else if(isInConfigList(responseCode, reasonPhrase,
                 mConfigRcsProvisionErrorOnSubscribeResponse)) {
-            logger.print("rcs proRcsPresence.vision sipCode=" + responseCode + " phrase=" + reasonPhrase);
+            logger.print("rcs proRcsPresence.vision sipCode=" + responseCode + " phrase="
+                    + reasonPhrase);
             mSubscriber.updatePublisherState(PUBLISH_STATE_RCS_PROVISION_ERROR);
         }
 

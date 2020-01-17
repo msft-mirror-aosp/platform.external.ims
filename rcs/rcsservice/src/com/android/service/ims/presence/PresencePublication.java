@@ -31,27 +31,26 @@ package com.android.service.ims.presence;
 import android.annotation.IntDef;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.telecom.PhoneAccount;
 import android.telecom.TelecomManager;
 import android.telephony.AccessNetworkConstants;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.RcsContactUceCapability;
 import android.telephony.ims.feature.MmTelFeature;
+import android.text.TextUtils;
 
-import com.android.ims.ImsConfig;
 import com.android.ims.ResultCode;
+import com.android.ims.internal.ContactNumberUtils;
 import com.android.ims.internal.Logger;
-import com.android.internal.telephony.IccCardConstants;
-import com.android.internal.telephony.TelephonyIntents;
 import com.android.service.ims.RcsSettingUtils;
 import com.android.service.ims.Task;
 import com.android.service.ims.TaskManager;
@@ -63,6 +62,8 @@ public class PresencePublication extends PresenceBase {
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
     private final Object mSyncObj = new Object();
+
+    private static final int TIMEOUT_CHECK_SUBSCRIPTION_READY_MS = 5000;
 
     boolean mMovedToIWLAN = false;
     boolean mMovedToLTE = false;
@@ -82,11 +83,47 @@ public class PresencePublication extends PresenceBase {
      * Message sent to mMsgHandler when there is a new request to Publish capabilities.
      */
     private static final int MESSAGE_RCS_PUBLISH_REQUEST = 1;
+    /*
+     * Message sent when the default subscription has changed or become active for the first time.
+     */
+    private static final int MESSAGE_DEFAULT_SUBSCRIPTION_CHANGED = 2;
+
+    private Handler mMsgHandler = new Handler(Looper.getMainLooper()) {
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+
+            logger.debug( "Thread=" + Thread.currentThread().getName() + " received "
+                    + msg);
+            if(msg == null){
+                logger.error("msg=null");
+                return;
+            }
+
+            switch (msg.what) {
+                case MESSAGE_RCS_PUBLISH_REQUEST: {
+                    logger.debug("handleMessage  msg=RCS_PUBLISH_REQUEST:");
+
+                    PublishRequest publishRequest = (PublishRequest) msg.obj;
+                    synchronized (mSyncObj) {
+                        mPendingRequest = null;
+                    }
+                    doPublish(publishRequest);
+                    break;
+                }
+                case MESSAGE_DEFAULT_SUBSCRIPTION_CHANGED: {
+                    requestPublishIfSubscriptionReady();
+                    break;
+                }
+                default:
+                    logger.debug("handleMessage unknown msg=" + msg.what);
+            }
+        }
+    };
 
     private PresencePublisher mPresencePublisher;
     private PresenceSubscriber mSubscriber = null;
     static private PresencePublication sPresencePublication = null;
-    private BroadcastReceiver mReceiver = null;
 
     private boolean mHasCachedTrigger = false;
     private boolean mGotTriggerFromStack = false;
@@ -99,6 +136,7 @@ public class PresencePublication extends PresenceBase {
     private boolean mDataEnabled = false;
     private final String[] mConfigVolteProvisionErrorOnPublishResponse;
     private final String[] mConfigRcsProvisionErrorOnPublishResponse;
+    private int mAssociatedSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
     /** ETag expired. */
     public static final int UCE_PRES_PUBLISH_TRIGGER_ETAG_EXPIRED = 0;
@@ -146,6 +184,7 @@ public class PresencePublication extends PresenceBase {
         public static final int PRES_PUBLISH_TRIGGER_TTY_ENABLE_STATUS = 3;
         public static final int PRES_PUBLISH_TRIGGER_RETRY = 4;
         public static final int PRES_PUBLISH_TRIGGER_FEATURE_AVAILABILITY_CHANGED = 5;
+        public static final int PRES_PUBLISH_TRIGGER_DEFAULT_SUB_CHANGED = 6;
     };
 
     public PresencePublication(PresencePublisher presencePublisher, Context context,
@@ -157,7 +196,7 @@ public class PresencePublication extends PresenceBase {
         mConfigVolteProvisionErrorOnPublishResponse = configVolteProvisionErrorOnPublishResponse;
         mConfigRcsProvisionErrorOnPublishResponse = configRcsProvisionErrorOnPublishResponse;
 
-        mVtEnabled = RcsSettingUtils.isVtEnabledByUser(mContext);
+        mVtEnabled = RcsSettingUtils.isVtEnabledByUser(mAssociatedSubscription);
 
         mDataEnabled = Settings.Global.getInt(mContext.getContentResolver(),
                     Settings.Global.MOBILE_DATA, 1) == 1;
@@ -167,123 +206,62 @@ public class PresencePublication extends PresenceBase {
         mPreferredTtyMode = tm.getCurrentTtyMode();
         logger.debug("The current TTY mode is: " + mPreferredTtyMode);
 
-        mReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                logger.print("onReceive intent=" + intent);
-                if(TelephonyIntents.ACTION_SIM_STATE_CHANGED.equalsIgnoreCase(intent.getAction())){
-                    String stateExtra = intent.getStringExtra(
-                            IccCardConstants.INTENT_KEY_ICC_STATE);
-                    logger.print("ACTION_SIM_STATE_CHANGED INTENT_KEY_ICC_STATE=" + stateExtra);
-                    final TelephonyManager teleMgr = (TelephonyManager) context.getSystemService(
-                                        Context.TELEPHONY_SERVICE);
-                    if(IccCardConstants.INTENT_VALUE_ICC_LOADED.equalsIgnoreCase(stateExtra)) {
-                        new Thread(new Runnable() {
-                            @Override
-                            public void run() {
-                                if(teleMgr == null){
-                                    logger.error("teleMgr = null");
-                                    return;
-                                }
-
-                                int count = 0;
-                                // retry 2 minutes to get the information from ISIM and RUIM
-                                for(int i=0; i<60; i++) {
-                                     String[] myImpu = teleMgr.getIsimImpu();
-                                     String myDomain = teleMgr.getIsimDomain();
-                                     String line1Number = teleMgr.getLine1Number();
-                                     if(line1Number != null && line1Number.length() != 0 ||
-                                         myImpu != null && myImpu.length != 0 &&
-                                         myDomain != null && myDomain.length() != 0){
-                                         mSimLoaded = true;
-                                         // treate hot SIM hot swap as power on.
-                                         mDonotRetryUntilPowerCycle = false;
-                                         if(mHasCachedTrigger) {
-                                             requestLocalPublish(PublishType.
-                                                     PRES_PUBLISH_TRIGGER_CACHED_TRIGGER);
-                                         }
-                                         break;
-                                     }else{
-                                         try{
-                                             Thread.sleep(2000);//retry 2 seconds later
-                                         }catch(InterruptedException e){
-                                         }
-                                     }
-                                 }
-                            }
-                        }, "wait for ISIM and RUIM").start();
-                    }else if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.
-                            equalsIgnoreCase(stateExtra)) {
-                        // pulled out the SIM, set it as the same as power on status:
-                        logger.print("Pulled out SIM, set to PUBLISH_STATE_NOT_PUBLISHED");
-
-                        // only reset when the SIM gets absent.
-                        reset();
-                        mSimLoaded = false;
-                        setPublishState(PUBLISH_STATE_NOT_PUBLISHED);
-                    }
-                }else if(Intent.ACTION_AIRPLANE_MODE_CHANGED.equalsIgnoreCase(intent.getAction())){
-                    boolean airplaneMode = intent.getBooleanExtra("state", false);
-                    if(airplaneMode){
-                        logger.print("Airplane mode, set to PUBLISH_STATE_NOT_PUBLISHED");
-                        reset();
-                        setPublishState(PUBLISH_STATE_NOT_PUBLISHED);
-                    }
-                }else if(TelecomManager.ACTION_TTY_PREFERRED_MODE_CHANGED.equalsIgnoreCase(
-                        intent.getAction())){
-                    int newPreferredTtyMode = intent.getIntExtra(
-                            TelecomManager.EXTRA_TTY_PREFERRED_MODE,
-                            TelecomManager.TTY_MODE_OFF);
-                    logger.debug("Tty mode changed from " + mPreferredTtyMode
-                            + " to " + newPreferredTtyMode);
-
-                    boolean mIsTtyEnabled = isTtyEnabled(mPreferredTtyMode);
-                    boolean isTtyEnabled = isTtyEnabled(newPreferredTtyMode);
-                    mPreferredTtyMode = newPreferredTtyMode;
-                    if (mIsTtyEnabled != isTtyEnabled) {
-                        logger.print("ttyEnabled status changed from " + mIsTtyEnabled
-                                + " to " + isTtyEnabled);
-                        requestLocalPublish(PublishType.
-                                PRES_PUBLISH_TRIGGER_TTY_ENABLE_STATUS);
-                    }
-                } else if(ImsConfig.ACTION_IMS_FEATURE_CHANGED.equalsIgnoreCase(
-                        intent.getAction())){
-                    int item = intent.getIntExtra(ImsConfig.EXTRA_CHANGED_ITEM, -1);
-                    if ((ImsConfig.ConfigConstants.VLT_SETTING_ENABLED == item) ||
-                            (ImsConfig.ConfigConstants.LVC_SETTING_ENABLED == item) ||
-                            (ImsConfig.ConfigConstants.EAB_SETTING_ENABLED == item)) {
-                        handleProvisionChanged();
-                    }
-                }
-            }
-        };
-
-        IntentFilter statusFilter = new IntentFilter();
-        statusFilter.addAction(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
-        statusFilter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
-        statusFilter.addAction(TelecomManager.ACTION_TTY_PREFERRED_MODE_CHANGED);
-        statusFilter.addAction(ImsConfig.ACTION_IMS_FEATURE_CHANGED);
-        mContext.registerReceiver(mReceiver, statusFilter);
-
         sPresencePublication = this;
+    }
+
+    private void requestPublishIfSubscriptionReady() {
+        if (!SubscriptionManager.isValidSubscriptionId(mAssociatedSubscription)) {
+            // pulled out the SIM, set it as the same as power on status:
+            logger.print("subscription changed to invalid, setting to not published");
+
+            // only reset when the SIM gets absent.
+            reset();
+            mSimLoaded = false;
+            setPublishState(PUBLISH_STATE_NOT_PUBLISHED);
+            return;
+        }
+        if (isSimLoaded()) {
+            logger.print("subscription ready, requesting publish");
+            mSimLoaded = true;
+            // treat hot SIM hot swap as power on.
+            mDonotRetryUntilPowerCycle = false;
+            requestLocalPublish(PublishType.PRES_PUBLISH_TRIGGER_DEFAULT_SUB_CHANGED);
+        } else {
+            mMsgHandler.removeMessages(MESSAGE_DEFAULT_SUBSCRIPTION_CHANGED);
+            mMsgHandler.sendMessageDelayed(
+                    mMsgHandler.obtainMessage(MESSAGE_DEFAULT_SUBSCRIPTION_CHANGED),
+                    TIMEOUT_CHECK_SUBSCRIPTION_READY_MS);
+        }
+    }
+
+    private boolean isSimLoaded() {
+        TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
+                Context.TELEPHONY_SERVICE);
+        if (teleMgr == null) return false;
+        teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
+        String[] myImpu = teleMgr.getIsimImpu();
+        String myDomain = teleMgr.getIsimDomain();
+        String line1Number = teleMgr.getLine1Number();
+        return !TextUtils.isEmpty(line1Number) || (!TextUtils.isEmpty(myDomain) && myImpu != null
+                && myImpu.length != 0);
     }
 
     private boolean isIPVoiceSupported(boolean volteAvailable, boolean voWifiAvailable) {
         // volte and vowifi can be enabled separately
-        if(!RcsSettingUtils.isVoLteSupported(mContext) &&
-                !RcsSettingUtils.isVoWiFiSupported(mContext)) {
+        if(!RcsSettingUtils.isVoLteSupported(mAssociatedSubscription) &&
+                !RcsSettingUtils.isVoWiFiSupported(mAssociatedSubscription)) {
             logger.print("Disabled by platform, voiceSupported=false");
             return false;
         }
 
-        if(!RcsSettingUtils.isVoLteProvisioned(mContext) &&
-                !RcsSettingUtils.isVowifiProvisioned(mContext)) {
+        if(!RcsSettingUtils.isVoLteProvisioned(mAssociatedSubscription) &&
+                !RcsSettingUtils.isVowifiProvisioned(mAssociatedSubscription)) {
             logger.print("Wasn't provisioned, voiceSupported=false");
             return false;
         }
 
-        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mContext) &&
-                !RcsSettingUtils.isWfcEnabledByUser(mContext)){
+        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mAssociatedSubscription) &&
+                !RcsSettingUtils.isWfcEnabledByUser(mAssociatedSubscription)){
             logger.print("User didn't enable volte or wfc, voiceSupported=false");
             return false;
         }
@@ -312,19 +290,19 @@ public class PresencePublication extends PresenceBase {
 
     private boolean isIPVideoSupported(boolean vtAvailable, boolean viWifiAvailable) {
         // if volte or vt was disabled then the viwifi will be disabled as well.
-        if(!RcsSettingUtils.isVoLteSupported(mContext) ||
-                !RcsSettingUtils.isVtSupported(mContext)) {
+        if(!RcsSettingUtils.isVoLteSupported(mAssociatedSubscription) ||
+                !RcsSettingUtils.isVtSupported(mAssociatedSubscription)) {
             logger.print("Disabled by platform, videoSupported=false");
             return false;
         }
 
-        if(!RcsSettingUtils.isVoLteProvisioned(mContext) ||
-                !RcsSettingUtils.isLvcProvisioned(mContext)) {
+        if(!RcsSettingUtils.isVoLteProvisioned(mAssociatedSubscription) ||
+                !RcsSettingUtils.isLvcProvisioned(mAssociatedSubscription)) {
             logger.print("Not provisioned. videoSupported=false");
             return false;
         }
 
-        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mContext) || !mVtEnabled){
+        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mAssociatedSubscription) || !mVtEnabled){
             logger.print("User disabled volte or vt, videoSupported=false");
             return false;
         }
@@ -359,6 +337,29 @@ public class PresencePublication extends PresenceBase {
         return true;
     }
 
+    public void onTtyPreferredModeChanged(int newTtyPreferredMode) {
+        logger.debug("Tty mode changed from " + mPreferredTtyMode
+                + " to " + newTtyPreferredMode);
+
+        boolean mIsTtyEnabled = isTtyEnabled(mPreferredTtyMode);
+        boolean isTtyEnabled = isTtyEnabled(newTtyPreferredMode);
+        mPreferredTtyMode = newTtyPreferredMode;
+        if (mIsTtyEnabled != isTtyEnabled) {
+            logger.print("ttyEnabled status changed from " + mIsTtyEnabled
+                    + " to " + isTtyEnabled);
+            requestLocalPublish(PresencePublication.PublishType.
+                    PRES_PUBLISH_TRIGGER_TTY_ENABLE_STATUS );
+        }
+    }
+
+    public void onAirplaneModeChanged(boolean isAirplaneModeEnabled) {
+        if(isAirplaneModeEnabled){
+            logger.print("Airplane mode, set to PUBLISH_STATE_NOT_PUBLISHED");
+            reset();
+            setPublishState(PUBLISH_STATE_NOT_PUBLISHED);
+        }
+    }
+
     public boolean isTtyOn() {
         logger.debug("isTtyOn settingsTtyMode=" + mPreferredTtyMode);
         return isTtyEnabled(mPreferredTtyMode);
@@ -387,15 +388,18 @@ public class PresencePublication extends PresenceBase {
         }
     }
 
-    public void handleImsServiceUp() {
+    public void handleAssociatedSubscriptionChanged(int newSubId) {
+        if (mAssociatedSubscription == newSubId) {
+            return;
+        }
         reset();
+        mAssociatedSubscription = newSubId;
+        mMsgHandler.removeMessages(MESSAGE_DEFAULT_SUBSCRIPTION_CHANGED);
+        mMsgHandler.sendMessage(mMsgHandler.obtainMessage(MESSAGE_DEFAULT_SUBSCRIPTION_CHANGED));
     }
 
-    public void handleImsServiceDown() {
-    }
-
-    private void handleProvisionChanged() {
-        if(RcsSettingUtils.isEabProvisioned(mContext)) {
+    public void handleProvisioningChanged() {
+        if(RcsSettingUtils.isEabProvisioned(mContext, mAssociatedSubscription)) {
             logger.debug("provisioned, set mDonotRetryUntilPowerCycle to false");
             mDonotRetryUntilPowerCycle = false;
             if(mHasCachedTrigger) {
@@ -444,8 +448,8 @@ public class PresencePublication extends PresenceBase {
     /**
      * @return return true if it had been PUBLISHED.
      */
-    public boolean isPublishedOrPublishing() {
-        long publishThreshold = RcsSettingUtils.getPublishThrottle(mContext);
+    private boolean isPublishedOrPublishing() {
+        long publishThreshold = RcsSettingUtils.getPublishThrottle(mAssociatedSubscription);
 
         boolean publishing = false;
         publishing = (mPublishingRequest != null) &&
@@ -519,6 +523,12 @@ public class PresencePublication extends PresenceBase {
                 logger.print("PRES_PUBLISH_TRIGGER_RETRY");
                 break;
             }
+            case PublishType.PRES_PUBLISH_TRIGGER_DEFAULT_SUB_CHANGED:
+            {
+                logger.print("PRES_PUBLISH_TRIGGER_DEFAULT_SUB_CHANGED");
+                bForceToNetwork = true;
+                break;
+            }
             default:
             {
                 logger.print("Unknown publish trigger from AP");
@@ -544,7 +554,7 @@ public class PresencePublication extends PresenceBase {
         }
 
         //the provision status didn't be read from modem yet
-        if(!RcsSettingUtils.isEabProvisioned(mContext)) {
+        if(!RcsSettingUtils.isEabProvisioned(mContext, mAssociatedSubscription)) {
             logger.print("invokePublish cache the trigger, not provision yet");
             mHasCachedTrigger = true;
             return;
@@ -653,7 +663,7 @@ public class PresencePublication extends PresenceBase {
         }
 
         //the provision status didn't be read from modem yet
-        if(!RcsSettingUtils.isEabProvisioned(mContext)) {
+        if(!RcsSettingUtils.isEabProvisioned(mContext, mAssociatedSubscription)) {
             logger.print("invokePublish cache the trigger, not provision yet");
             mHasCachedTrigger = true;
             return;
@@ -677,8 +687,8 @@ public class PresencePublication extends PresenceBase {
     }
 
     public class PublishRequest {
-        private boolean mForceToNetwork = true;
-        private long mCurrentTime = 0;
+        private boolean mForceToNetwork;
+        private long mCurrentTime;
         private boolean mVolteCapable = false;
         private boolean mVtCapable = false;
 
@@ -689,8 +699,8 @@ public class PresencePublication extends PresenceBase {
         }
 
         public void refreshPublishContent() {
-            mVolteCapable = isIPVoiceSupported(mIsVolteAvailable, mIsVoWifiAvailable);
-            mVtCapable = isIPVideoSupported(mIsVtAvailable, mIsViWifiAvailable);
+            setVolteCapable(isIPVoiceSupported(mIsVolteAvailable, mIsVoWifiAvailable));
+            setVtCapable(isIPVideoSupported(mIsVtAvailable, mIsViWifiAvailable));
         }
 
         public boolean getForceToNetwork() {
@@ -743,35 +753,6 @@ public class PresencePublication extends PresenceBase {
         }
     }
 
-    private Handler mMsgHandler = new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            super.handleMessage(msg);
-
-            logger.debug( "Thread=" + Thread.currentThread().getName() + " received "
-                    + msg);
-            if(msg == null){
-                logger.error("msg=null");
-                return;
-           }
-
-            switch (msg.what) {
-                case MESSAGE_RCS_PUBLISH_REQUEST:
-                    logger.debug("handleMessage  msg=RCS_PUBLISH_REQUEST:");
-
-                    PublishRequest publishRequest = (PublishRequest) msg.obj;
-                    synchronized(mSyncObj) {
-                        mPendingRequest = null;
-                    }
-                    doPublish(publishRequest);
-                break;
-
-                default:
-                    logger.debug("handleMessage unknown msg=" + msg.what);
-            }
-        }
-    };
-
     private void requestPublication(PublishRequest publishRequest) {
         // this is used to avoid the temp false feature change when switched between network.
         if(publishRequest == null) {
@@ -814,7 +795,7 @@ public class PresencePublication extends PresenceBase {
         }
 
         if(!mImsRegistered) {
-            logger.debug("IMS wasn't registered");
+            logger.error("IMS wasn't registered");
             return;
         }
 
@@ -847,7 +828,7 @@ public class PresencePublication extends PresenceBase {
                 return;
             }
 
-            long publishThreshold = RcsSettingUtils.getPublishThrottle(mContext);
+            long publishThreshold = RcsSettingUtils.getPublishThrottle(mAssociatedSubscription);
             long passed = publishThreshold;
             if(mPublishingRequest != null) {
                 passed = System.currentTimeMillis() - mPublishingRequest.getTimestamp();
@@ -869,7 +850,7 @@ public class PresencePublication extends PresenceBase {
 
         // we need send PUBLISH once even the volte is off when power on the phone.
         // That will tell other phone that it has no volte/vt capability.
-        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mContext) &&
+        if(!RcsSettingUtils.isAdvancedCallingEnabledByUser(mAssociatedSubscription) &&
                 getPublishState() != PUBLISH_STATE_NOT_PUBLISHED) {
              // volte was not enabled.
              // or it is turnning off volte. lower layer should unpublish
@@ -879,6 +860,7 @@ public class PresencePublication extends PresenceBase {
 
         TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
                 Context.TELEPHONY_SERVICE);
+        teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
         if (teleMgr == null) {
              logger.error("TelephonyManager not available.");
              return;
@@ -899,20 +881,79 @@ public class PresencePublication extends PresenceBase {
             mPublishingRequest.setTimestamp(System.currentTimeMillis());
         }
 
-        int ret = mPresencePublisher.requestPublication(presenceInfoBuilder.build());
-        if (ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE) {
-            mHasCachedTrigger = true;
-        } else {
-            //reset the cached trigger
-            mHasCachedTrigger = false;
+        String myUri = getUriForPublication();
+        if (myUri == null) {
+            logger.error("doPublish, myUri is null");
         }
+        String myNumber = getNumberFromUri(myUri);
+        int taskId = TaskManager.getDefault().addPublishTask(myNumber);
+        logger.print("doPublish, uri=" + myUri + ", myNumber=" + myNumber + ", taskId=" + taskId);
+        int ret = mPresencePublisher.requestPublication(presenceInfoBuilder.build(), myUri, taskId);
+        if (ret != ResultCode.SUCCESS) {
+            logger.print("doPublish, task=" + taskId + " failed with code=" + ret);
+            TaskManager.getDefault().removeTask(taskId);
+        }
+        // cache the latest publication request if temporarily not available.
+        mHasCachedTrigger = (ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE);
+    }
+
+    private String getNumberFromUri(String uriString) {
+        String number = Uri.parse(uriString).getSchemeSpecificPart();
+        String[] numberParts = number.split("[@;:]");
+
+        if (numberParts.length == 0) {
+            logger.error("getNumberFromUri: invalid uri=" + uriString);
+            return null;
+        }
+        return numberParts[0];
+    }
+
+    private String getUriForPublication() {
+        TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
+                Context.TELEPHONY_SERVICE);
+        if (teleMgr == null) {
+            logger.error("getUriForPublication, teleMgr = null");
+            return null;
+        }
+        teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
+
+        String myNumUri = null;
+        String myDomain = teleMgr.getIsimDomain();
+        logger.debug("myDomain=" + myDomain);
+        if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
+            String[] impu = teleMgr.getIsimImpu();
+
+            if(impu !=null){
+                for(int i=0; i<impu.length; i++){
+                    logger.debug("impu[" + i + "]=" + impu[i]);
+                    if(impu[i] != null && impu[i].startsWith("sip:") &&
+                            impu[i].endsWith(myDomain)){
+                        myNumUri = impu[i];
+                        break;
+                    }
+                }
+            }
+        }
+        String myNumber = null;
+        if (myNumUri != null) {
+            myNumber = Uri.parse(myNumUri).getSchemeSpecificPart();
+        }
+
+        if (myNumber == null) {
+            myNumber = ContactNumberUtils.getDefault().format(teleMgr.getLine1Number());
+            if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
+                myNumUri = "sip:" + myNumber + "@" + myDomain;
+            } else {
+                myNumUri = "tel:" + myNumber;
+            }
+        }
+        return myNumUri;
     }
 
     private PendingIntent mRetryAlarmIntent = null;
     public static final String ACTION_RETRY_PUBLISH_ALARM =
             "com.android.service.ims.presence.retry.publish";
     private AlarmManager mAlarmManager = null;
-    private BroadcastReceiver mRetryReceiver = null;
     boolean mCancelRetry = true;
     boolean mPendingRetry = false;
 
@@ -1036,17 +1077,6 @@ public class PresencePublication extends PresenceBase {
 
     private static boolean isTtyEnabled(int mode) {
         return TelecomManager.TTY_MODE_OFF != mode;
-    }
-
-    public void finish() {
-        if (mReceiver != null) {
-            mContext.unregisterReceiver(mReceiver);
-            mReceiver = null;
-        }
-    }
-
-    protected void finalize() throws Throwable {
-        finish();
     }
 
     public void onFeatureCapabilityChanged(int networkType,
