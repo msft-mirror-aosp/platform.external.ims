@@ -168,8 +168,8 @@ public class RcsService extends Service {
         }
 
         @Override
-        public void onCapabilitiesUpdated(List<RcsContactUceCapability> contactCapabilities,
-                boolean updateLastTimestamp) {
+        public void onCapabilitiesUpdated(int reqId,
+                List<RcsContactUceCapability> contactCapabilities, boolean updateLastTimestamp) {
             ArrayList<RcsPresenceInfo> presenceInfoList = contactCapabilities.stream().map(
                     PresenceInfoParser::getRcsPresenceInfo).collect(
                     Collectors.toCollection(ArrayList::new));
