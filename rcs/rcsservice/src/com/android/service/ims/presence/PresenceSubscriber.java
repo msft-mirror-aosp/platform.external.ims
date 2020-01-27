@@ -457,7 +457,7 @@ public class PresenceSubscriber extends PresenceBase {
             logger.warn("handleCapabilityUpdate, invalid listener!");
             return;
         }
-        task.mListener.onCapabilitiesUpdated(capabilities, updateLastTimestamp);
+        task.mListener.onCapabilitiesUpdated(task.mTaskId, capabilities, updateLastTimestamp);
     }
 
     public void retryToGetAvailability() {
