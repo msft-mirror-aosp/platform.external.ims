@@ -75,6 +75,6 @@ public interface ContactCapabilityResponse {
      * Called when there is an update to the capabilities from the network. On error, the
      * capabilities will also be updates as not capable.
      */
-    void onCapabilitiesUpdated(List<RcsContactUceCapability> contactCapabilities,
+    void onCapabilitiesUpdated(int reqId, List<RcsContactUceCapability> contactCapabilities,
             boolean updateLastTimestamp);
 }
