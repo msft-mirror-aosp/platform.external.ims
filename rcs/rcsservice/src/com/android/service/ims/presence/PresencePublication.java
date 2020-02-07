@@ -211,20 +211,18 @@ public class PresencePublication extends PresenceBase {
         sPresencePublication = this;
     }
 
-    public void updatePresencePublisher(int subId, PresencePublisher presencePublisher) {
+    public void updatePresencePublisher(PresencePublisher presencePublisher) {
         synchronized(mSyncObj) {
-            logger.debug("Update PresencePublisher: subId=" + subId);
+            logger.debug("Update PresencePublisher");
             this.mPresencePublisher = presencePublisher;
         }
-        handleAssociatedSubscriptionChanged(subId);
     }
 
-    public void removePresencePublisher(int subId) {
+    public void removePresencePublisher() {
         synchronized(mSyncObj) {
-            logger.debug("Remove PresencePublisher: subId=" + subId);
+            logger.debug("Remove PresencePublisher");
             this.mPresencePublisher = null;
         }
-        handleAssociatedSubscriptionChanged(subId);
     }
 
     private void requestPublishIfSubscriptionReady() {
