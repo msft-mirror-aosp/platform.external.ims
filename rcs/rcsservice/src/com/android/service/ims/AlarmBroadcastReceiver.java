@@ -26,25 +26,18 @@
  * DAMAGE.
  */
 
-package com.android.service.ims.presence;
+package com.android.service.ims;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
 import com.android.ims.internal.Logger;
-
-import com.android.service.ims.RcsStackAdaptor;
-import com.android.service.ims.TaskManager;
+import com.android.service.ims.presence.PresenceCapabilityTask;
+import com.android.service.ims.presence.PresencePublication;
 
 public class AlarmBroadcastReceiver extends BroadcastReceiver{
     private Logger logger = Logger.getLogger(this.getClass().getName());
-
-    public static final String ACTION_RETRY_ALARM = "com.android.service.ims.presence.retry";
-    private static final String ACTION_TASK_TIMEOUT_ALARM =
-            PresenceCapabilityTask.ACTION_TASK_TIMEOUT_ALARM;
-    private static final String ACTION_RETRY_PUBLISH_ALARM =
-            PresencePublication.ACTION_RETRY_PUBLISH_ALARM;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -59,15 +52,13 @@ public class AlarmBroadcastReceiver extends BroadcastReceiver{
             return;
         }
 
-        if(ACTION_RETRY_ALARM.equals(action)) {
+        if(RcsStackAdaptor.ACTION_RETRY_ALARM.equals(action)) {
             int times = intent.getIntExtra("times", -1);
             rcsStackAdaptor.startInitThread(times);
-        }else if(ACTION_TASK_TIMEOUT_ALARM.equals(action)){
+        }else if(PresenceCapabilityTask.ACTION_TASK_TIMEOUT_ALARM.equals(action)){
             int taskId = intent.getIntExtra("taskId", -1);
             TaskManager.getDefault().onTimeout(taskId);
-        } else if(ACTION_RETRY_PUBLISH_ALARM.equals(action)) {
-            // default retry is for 888
-            int sipCode = intent.getIntExtra("sipCode", 888);
+        } else if(PresencePublication.ACTION_RETRY_PUBLISH_ALARM.equals(action)) {
             PresencePublication publication = PresencePublication.getPresencePublication();
             if(publication != null) {
                 publication.retryPublish();

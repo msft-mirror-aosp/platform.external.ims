@@ -26,24 +26,23 @@
  * DAMAGE.
  */
 
-package com.android.service.ims.presence;
+package com.android.service.ims;
+
+import android.net.Uri;
+import android.telephony.ims.RcsContactUceCapability;
 
 import java.lang.String;
 import java.util.ArrayList;
-import java.util.List;
-import android.text.TextUtils;
 
+import com.android.ims.internal.Logger;
 import com.android.ims.internal.uce.presence.PresTupleInfo;
 import com.android.ims.internal.uce.presence.PresRlmiInfo;
 import com.android.ims.internal.uce.presence.PresResInfo;
 import com.android.ims.internal.uce.presence.PresResInstanceInfo;
-
-import com.android.ims.RcsManager.ResultCode;
 import com.android.ims.RcsPresenceInfo;
 import com.android.ims.RcsPresenceInfo.ServiceType;
 import com.android.ims.RcsPresenceInfo.ServiceState;
-
-import com.android.ims.internal.Logger;
+import com.android.service.ims.presence.PresenceUtils;
 
 public class PresenceInfoParser{
     /*
@@ -171,8 +170,8 @@ public class PresenceInfoParser{
                                 (ServiceState.ONLINE == presenceInfoTmp.getServiceState(
                                 ServiceType.VT_CALL)))?ServiceState.ONLINE:
                                     presenceInfoTmp.getServiceState(ServiceType.VT_CALL),
-                        presenceInfoTmp.getServiceContact(ServiceType.VOLTE_CALL),
-                        presenceInfoTmp.getTimeStamp(ServiceType.VOLTE_CALL)));
+                        presenceInfoTmp.getServiceContact(ServiceType.VT_CALL),
+                        presenceInfoTmp.getTimeStamp(ServiceType.VT_CALL)));
                 return;
             }
         }
@@ -272,5 +271,40 @@ public class PresenceInfoParser{
         }
 
         return number;
+    }
+
+    public static RcsContactUceCapability getUceCapability(RcsPresenceInfo info) {
+        RcsContactUceCapability.Builder result = new RcsContactUceCapability.Builder(
+                PresenceUtils.convertContactNumber(info.getContactNumber()));
+        if (ServiceState.ONLINE == info.getServiceState(ServiceType.VOLTE_CALL)) {
+            result.add(RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL,
+                    PresenceUtils.convertContactNumber(
+                            info.getServiceContact(ServiceType.VOLTE_CALL)));
+        }
+        if (ServiceState.ONLINE == info.getServiceState(ServiceType.VT_CALL)) {
+            result.add(RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL,
+                    PresenceUtils.convertContactNumber(
+                            info.getServiceContact(ServiceType.VT_CALL)));
+        }
+        return result.build();
+    }
+
+    public static RcsPresenceInfo getRcsPresenceInfo(RcsContactUceCapability capability) {
+        int volteCapable = capability.isCapable(RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL) ?
+                ServiceState.ONLINE : ServiceState.OFFLINE;
+        int vtCapable = capability.isCapable(RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL) ?
+                ServiceState.ONLINE : ServiceState.OFFLINE;
+        return new RcsPresenceInfo(capability.getContactUri().getSchemeSpecificPart(),
+                // Not sure what the difference is, just track voice capable.
+                (volteCapable == ServiceState.ONLINE) ? RcsPresenceInfo.VolteStatus.VOLTE_ENABLED :
+                        RcsPresenceInfo.VolteStatus.VOLTE_DISABLED, volteCapable,
+                PresenceUtils.getNumber(capability.getServiceUri(
+                        RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL)),
+                // We always use system current time instead of time from server
+                System.currentTimeMillis(), vtCapable,
+                PresenceUtils.getNumber(capability.getServiceUri(
+                        RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL)),
+                // We always use system current time instead of time from server
+                System.currentTimeMillis());
     }
 }

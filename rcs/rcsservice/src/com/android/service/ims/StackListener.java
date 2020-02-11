@@ -26,24 +26,23 @@
  * DAMAGE.
  */
 
-package com.android.service.ims.presence;
+package com.android.service.ims;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import android.content.ServiceConnection;
-import android.annotation.SuppressLint;
-import android.content.Intent;
 import android.content.Context;
-import android.content.SharedPreferences;
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.Parcel;
 import android.os.RemoteException;
+import android.telephony.ims.RcsContactUceCapability;
 import android.text.TextUtils;
 import android.util.Log;
-import android.os.Parcel;
 
+import com.android.ims.RcsManager;
+import com.android.ims.RcsPresenceInfo;
+import com.android.ims.internal.Logger;
+import com.android.ims.internal.uce.common.StatusCode;
 import com.android.ims.internal.uce.presence.IPresenceListener;
 import com.android.ims.internal.uce.presence.PresCmdId;
 import com.android.ims.internal.uce.presence.PresCmdStatus;
@@ -51,20 +50,12 @@ import com.android.ims.internal.uce.presence.PresPublishTriggerType;
 import com.android.ims.internal.uce.presence.PresResInfo;
 import com.android.ims.internal.uce.presence.PresRlmiInfo;
 import com.android.ims.internal.uce.presence.PresSipResponse;
+import com.android.ims.internal.uce.presence.PresSubscriptionState;
 import com.android.ims.internal.uce.presence.PresTupleInfo;
-import com.android.ims.internal.uce.common.StatusCode;
-import com.android.ims.internal.uce.common.StatusCode;
+import com.android.service.ims.presence.PresencePublication;
+import com.android.service.ims.presence.PresenceSubscriber;
 
-import com.android.ims.RcsManager;
-import com.android.ims.RcsManager.ResultCode;
-import com.android.ims.RcsPresence;
-import com.android.ims.RcsPresenceInfo;
-import com.android.ims.IRcsPresenceListener;
-
-import com.android.ims.internal.Logger;
-import com.android.service.ims.TaskManager;
-import com.android.service.ims.Task;
-import com.android.service.ims.RcsStackAdaptor;
+import java.util.ArrayList;
 
 public class StackListener extends Handler{
     /*
@@ -98,7 +89,7 @@ public class StackListener extends Handler{
         mContext = context;
     }
 
-    public void setPresencePublication(PresencePublication presencePublication){
+    public void setPresencePublication(PresencePublication presencePublication) {
         mPresencePublication = presencePublication;
     }
 
@@ -127,7 +118,8 @@ public class StackListener extends Handler{
                     return;
                 }
 
-                mPresencePublication.invokePublish(val);
+                mPresencePublication.onStackPublishRequested(
+                        convertToStackPublishTriggerType(val.getPublishTrigeerType()));
                 break;
             }
 
@@ -135,13 +127,16 @@ public class StackListener extends Handler{
             case PRESENCE_IMS_UNSOL_PUBLISH_CMDSTATUS:
             {
                 PresCmdStatus pCmdStatus = (PresCmdStatus) msg.obj;
-                if(mPresencePublication == null || pCmdStatus == null){
+                if(mPresencePublication == null || pCmdStatus == null) {
                     logger.error("mPresencePublication=" + mPresencePublication +
                             " pCmdStatus=" + pCmdStatus);
                     return;
                 }
 
-                mPresencePublication.handleCmdStatus(pCmdStatus);
+                int commandResult = RcsUtils.statusCodeToResultCode(
+                        pCmdStatus.getStatus().getStatusCode());
+                mPresencePublication.onCommandStatusUpdated(pCmdStatus.getUserData(),
+                        pCmdStatus.getRequestId(), commandResult);
             }
                 break;
 
@@ -154,8 +149,10 @@ public class StackListener extends Handler{
                             " pCmdStatus=" + pCmdStatus);
                     return;
                 }
-
-                mPresenceSubscriber.handleCmdStatus(pCmdStatus);
+                int commandResult = RcsUtils.statusCodeToResultCode(
+                        pCmdStatus.getStatus().getStatusCode());
+                mPresenceSubscriber.onCommandStatusUpdated(pCmdStatus.getUserData(),
+                        pCmdStatus.getRequestId(), commandResult);
                 break;
             }
 
@@ -163,13 +160,14 @@ public class StackListener extends Handler{
             case PRESENCE_IMS_UNSOL_PUBLISH_SIPRESPONSE:
             {
                 PresSipResponse pSipResponse =  (PresSipResponse) msg.obj;
-                if(mPresencePublication == null || pSipResponse == null){
+                if(mPresencePublication == null || pSipResponse == null) {
                     logger.error("mPresencePublication=" + mPresencePublication +
                             "pSipResponse=" +pSipResponse);
                     return;
                 }
 
-                mPresencePublication.handleSipResponse(pSipResponse);
+                mPresencePublication.onSipResponse(pSipResponse.getRequestId(),
+                        pSipResponse.getSipResponseCode(), pSipResponse.getReasonPhrase());
                 break;
             }
 
@@ -183,7 +181,8 @@ public class StackListener extends Handler{
                     return;
                 }
 
-                mPresenceSubscriber.handleSipResponse(pSipResponse);
+                mPresenceSubscriber.onSipResponse(pSipResponse.getRequestId(),
+                        pSipResponse.getSipResponseCode(), pSipResponse.getReasonPhrase());
                 break;
             }
 
@@ -196,9 +195,16 @@ public class StackListener extends Handler{
                             " notifyData=" + notifyData);
                     return;
                 }
-
-                mPresenceSubscriber.updatePresence(notifyData.getUri(),
-                        notifyData.getTupleInfo());
+                RcsPresenceInfo rcsPresenceInfo = PresenceInfoParser.getPresenceInfoFromTuple(
+                        notifyData.getUri(), notifyData.getTupleInfo());
+                if(rcsPresenceInfo == null || TextUtils.isEmpty(
+                        rcsPresenceInfo.getContactNumber())){
+                    logger.error("rcsPresenceInfo is null or " +
+                            "TextUtils.isEmpty(rcsPresenceInfo.getContactNumber()");
+                    return;
+                }
+                mPresenceSubscriber.updatePresence(
+                        PresenceInfoParser.getUceCapability(rcsPresenceInfo));
                 break;
             }
 
@@ -212,8 +218,40 @@ public class StackListener extends Handler{
                     return;
                 }
 
-                mPresenceSubscriber.updatePresences(notifyListData.getRlmiInfo(),
-                        notifyListData.getResInfo());
+                RcsPresenceInfo[] rcsPresenceInfos = PresenceInfoParser.
+                        getPresenceInfosFromPresenceRes(notifyListData.getRlmiInfo(),
+                                notifyListData.getResInfo());
+                if(rcsPresenceInfos == null){
+                    logger.error("updatePresences: rcsPresenceInfos == null");
+                    return;
+                }
+
+                PresRlmiInfo info = notifyListData.getRlmiInfo();
+                boolean isTerminated = false;
+                if (info.getPresSubscriptionState() != null) {
+                    if (info.getPresSubscriptionState().getPresSubscriptionStateValue() ==
+                            PresSubscriptionState.UCE_PRES_SUBSCRIPTION_STATE_TERMINATED) {
+                        isTerminated = true;
+                    }
+                }
+
+                ArrayList<RcsContactUceCapability> capabilities = new ArrayList<>();
+
+                for (int i=0; i < rcsPresenceInfos.length; i++) {
+                    if(rcsPresenceInfos[i] != null && TextUtils.isEmpty(
+                            rcsPresenceInfos[i].getContactNumber())){
+                        continue;
+                    }
+                    RcsContactUceCapability capability = PresenceInfoParser.getUceCapability(
+                            rcsPresenceInfos[i]);
+                    if(capability != null && (capability.getContactUri() != null)){
+                        logger.debug("capability=" + capability);
+                        capabilities.add(capability);
+                    }
+                }
+
+                mPresenceSubscriber.updatePresences(info.getRequestId(), capabilities, isTerminated,
+                        info.getSubscriptionTerminatedReason());
                 break;
             }
 
@@ -369,11 +407,9 @@ public class StackListener extends Handler{
                 }
 
                 // Handle the cached trigger which got from stack
-                if(mPresencePublication != null && mPresencePublication.getHasCachedTrigger()){
+                if(mPresencePublication != null) {
                     logger.debug("publish for cached trigger");
-
-                    mPresencePublication.invokePublish(
-                            PresencePublication.PublishType.PRES_PUBLISH_TRIGGER_CACHED_TRIGGER);
+                    mPresencePublication.onStackAvailable();
                 }
 
                 Intent intent = new Intent(RcsManager.ACTION_RCS_SERVICE_AVAILABLE);
@@ -534,5 +570,30 @@ public class StackListener extends Handler{
             logger.debug("unpublishMessageSent()");
         }
     };
+
+    @PresencePublication.StackPublishTriggerType
+    private static int convertToStackPublishTriggerType(int presPublishTriggerType) {
+        switch (presPublishTriggerType) {
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_ETAG_EXPIRED:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_ETAG_EXPIRED;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_DISABLED:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_DISABLED;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_ENABLED:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_LTE_VOPS_ENABLED;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_EHRPD:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_EHRPD;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_HSPAPLUS:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_HSPAPLUS;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_3G:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_3G;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_2G:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_2G;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_WLAN:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_WLAN;
+            case PresPublishTriggerType.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_IWLAN:
+                return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_MOVE_TO_IWLAN;
+        }
+        return PresencePublication.UCE_PRES_PUBLISH_TRIGGER_UNKNOWN;
+    }
 }
 
