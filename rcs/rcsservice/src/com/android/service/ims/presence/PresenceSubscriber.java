@@ -79,7 +79,7 @@ public class PresenceSubscriber extends PresenceBase {
 
     public void removePresenceSubscriber() {
         synchronized(mSubscriberLock) {
-                logger.print("Remove PresencePublisher:");
+                logger.print("Remove PresenceSubscriber");
             this.mSubscriber = null;
         }
     }
