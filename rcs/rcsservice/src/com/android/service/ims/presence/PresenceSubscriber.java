@@ -70,20 +70,18 @@ public class PresenceSubscriber extends PresenceBase {
         mConfigRcsProvisionErrorOnSubscribeResponse = configRcsProvisionErrorOnSubscribeResponse;
     }
 
-    public void updatePresenceSubscriber(int subId, SubscribePublisher subscriber) {
+    public void updatePresenceSubscriber(SubscribePublisher subscriber) {
         synchronized(mSubscriberLock) {
-            logger.print("Update PresencePublisher: subId=" + subId);
+            logger.print("Update PresencePublisher");
             this.mSubscriber = subscriber;
         }
-        handleAssociatedSubscriptionChanged(subId);
     }
 
-    public void removePresenceSubscriber(int subId) {
+    public void removePresenceSubscriber() {
         synchronized(mSubscriberLock) {
-                logger.print("Remove PresencePublisher: subId=" + subId);
+                logger.print("Remove PresenceSubscriber");
             this.mSubscriber = null;
         }
-        handleAssociatedSubscriptionChanged(subId);
     }
 
     public void handleAssociatedSubscriptionChanged(int newSubId) {
