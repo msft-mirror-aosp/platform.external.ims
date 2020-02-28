@@ -33,12 +33,18 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.ContentObserver;
+import android.net.Uri;
+import android.provider.Telephony;
 import android.telephony.CarrierConfigManager;
 import android.os.IBinder;
 import android.os.PersistableBundle;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
 import android.telephony.SubscriptionManager;
+import android.telephony.ims.ImsManager;
+import android.telephony.ims.ImsRcsManager;
+import android.util.Log;
 
 import com.android.ims.internal.Logger;
 import com.android.internal.annotations.VisibleForTesting;
@@ -48,6 +54,9 @@ import com.android.internal.annotations.VisibleForTesting;
  * supports RCS Presence Capability Polling and stops the service otherwise.
  */
 public class PollingService extends Service {
+
+    private static final Uri UCE_URI = Uri.withAppendedPath(Telephony.SimInfo.CONTENT_URI,
+            Telephony.SimInfo.COLUMN_IMS_RCS_UCE_ENABLED);
 
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
@@ -70,6 +79,8 @@ public class PollingService extends Service {
             }
         }
     };
+
+    private ContentObserver mUceSettingObserver;
 
     private SubscriptionManager.OnSubscriptionsChangedListener mSubChangedListener =
             new SubscriptionManager.OnSubscriptionsChangedListener() {
@@ -97,6 +108,20 @@ public class PollingService extends Service {
         // start polling.
         subscriptionManager.addOnSubscriptionsChangedListener(getMainExecutor(),
                 mSubChangedListener);
+        mUceSettingObserver = new ContentObserver(getMainThreadHandler()) {
+            @Override
+            public void onChange(boolean selfChange) {
+                onChange(selfChange, null /*uri*/);
+            }
+
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                logger.print("UCE setting changed, re-evaluating poll service.");
+                checkAndUpdateCapabilityPollStatus();
+            }
+        };
+        getContentResolver().registerContentObserver(UCE_URI, true /*notifyForDescendants*/,
+                mUceSettingObserver);
     }
 
     /**
@@ -113,6 +138,9 @@ public class PollingService extends Service {
         SubscriptionManager subscriptionManager = getSystemService(SubscriptionManager.class);
         subscriptionManager.removeOnSubscriptionsChangedListener(mSubChangedListener);
         unregisterReceiver(mReceiver);
+        if (mUceSettingObserver != null) {
+            getContentResolver().unregisterContentObserver(mUceSettingObserver);
+        }
 
         super.onDestroy();
     }
@@ -164,8 +192,12 @@ public class PollingService extends Service {
 
     private void checkAndUpdateCapabilityPollStatus() {
         // If the carrier doesn't support RCS Presence, stop polling.
-        if (!isRcsSupportedByCarrier()) {
-            logger.info("RCS not supported by carrier. Stopping CapabilityPolling");
+        boolean carrierSupport = isRcsSupportedByCarrier();
+        boolean userEnabled = hasUserEnabledUce();
+        logger.print("RCS carrier support = " + carrierSupport + ", user enabled = "
+                + userEnabled);
+        if (!carrierSupport || !userEnabled) {
+            logger.print("RCS UCE Not supported, Stopping CapabilityPolling");
             if (mCapabilityPolling != null) {
                 mCapabilityPolling.stop();
                 mCapabilityPolling = null;
@@ -178,6 +210,21 @@ public class PollingService extends Service {
             mCapabilityPolling = CapabilityPolling.getInstance(this);
             mCapabilityPolling.start();
         }
+    }
+
+    private boolean hasUserEnabledUce() {
+        ImsManager manager = getSystemService(ImsManager.class);
+        if (manager == null) {
+            logger.error("hasUserEnabledUce: manager not available.");
+            return false;
+        }
+        try {
+            ImsRcsManager rcsManager = manager.getImsRcsManager(mDefaultSubId);
+            return (rcsManager != null) && rcsManager.getUceAdapter().isUceSettingEnabled();
+        } catch (Exception e) {
+            logger.error("hasUserEnabledUce: exception = " + e.getMessage());
+        }
+        return false;
     }
 
     private boolean isRcsSupportedByCarrier() {
