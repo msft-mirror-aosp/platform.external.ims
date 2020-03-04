@@ -132,6 +132,12 @@ public class PresenceSubscriber extends PresenceBase {
             return ResultCode.SUBSCRIBE_NOT_REGISTERED;
         }
 
+        if (!RcsSettingUtils.hasUserEnabledContactDiscovery(mContext, mAssociatedSubscription)) {
+            logger.warn("requestCapability request has been denied due to contact discovery being "
+                    + "disabled by the user");
+            return ResultCode.ERROR_SERVICE_NOT_ENABLED;
+        }
+
         int ret = subscriber.getStackStatusForCapabilityRequest();
         if (ret < ResultCode.SUCCESS) {
             logger.error("requestCapability ret=" + ret);
@@ -195,6 +201,12 @@ public class PresenceSubscriber extends PresenceBase {
         int ret = ContactNumberUtils.getDefault().validate(formatedContact);
         if(ret != ContactNumberUtils.NUMBER_VALID){
             return ret;
+        }
+
+        if (!RcsSettingUtils.hasUserEnabledContactDiscovery(mContext, mAssociatedSubscription)) {
+            logger.warn("requestCapability request has been denied due to contact discovery being "
+                    + "disabled by the user");
+            return ResultCode.ERROR_SERVICE_NOT_ENABLED;
         }
 
         if(!forceToNetwork){
