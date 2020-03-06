@@ -131,7 +131,8 @@ public class PresenceSetting {
             try {
                 ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(subId);
                 value = pm.getProvisioningIntValue(
-                        ProvisioningManager.KEY_RCS_PUBLISH_TIMER_EXTENDED_SEC);
+                        ProvisioningManager.
+                                KEY_RCS_PUBLISH_OFFLINE_AVAILABILITY_TIMER_SEC);
             } catch (Exception ex) {
                 logger.warn("getPublishTimerExtended, exception = " + ex.getMessage());
             }
