@@ -56,7 +56,7 @@ import com.android.internal.annotations.VisibleForTesting;
 public class PollingService extends Service {
 
     private static final Uri UCE_URI = Uri.withAppendedPath(Telephony.SimInfo.CONTENT_URI,
-            Telephony.SimInfo.IMS_RCS_UCE_ENABLED);
+            Telephony.SimInfo.COLUMN_IMS_RCS_UCE_ENABLED);
 
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
