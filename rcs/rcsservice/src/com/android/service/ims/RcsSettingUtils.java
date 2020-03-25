@@ -35,7 +35,9 @@ import android.telephony.CarrierConfigManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.ims.ImsException;
+import android.telephony.ims.ImsManager;
 import android.telephony.ims.ImsMmTelManager;
+import android.telephony.ims.ImsRcsManager;
 import android.telephony.ims.ProvisioningManager;
 import android.telephony.ims.feature.MmTelFeature;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
@@ -130,6 +132,21 @@ public class RcsSettingUtils {
         }
         logger.debug("isEabProvisioned=" + isProvisioned);
         return isProvisioned;
+    }
+
+    public static boolean hasUserEnabledContactDiscovery(Context context, int subId) {
+        if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+            logger.debug("hasUserEnabledContactDiscovery: no valid subscriptions!");
+            return false;
+        }
+        try {
+            ImsManager imsManager = context.getSystemService(ImsManager.class);
+            ImsRcsManager rcsManager = imsManager.getImsRcsManager(subId);
+            return rcsManager.getUceAdapter().isUceSettingEnabled();
+        } catch (Exception e) {
+            logger.warn("hasUserEnabledContactDiscovery: Exception = " + e.getMessage());
+            return false;
+        }
     }
 
     public static int getSIPT1Timer(int subId) {
