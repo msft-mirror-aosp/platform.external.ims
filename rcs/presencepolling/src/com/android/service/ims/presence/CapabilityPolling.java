@@ -31,6 +31,7 @@ package com.android.service.ims.presence;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -44,7 +45,9 @@ import android.telephony.PhoneNumberUtils;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.ImsException;
+import android.telephony.ims.ImsManager;
 import android.telephony.ims.ProvisioningManager;
+import android.telephony.ims.RcsUceAdapter;
 import android.text.format.TimeMigrationUtils;
 import android.text.TextUtils;
 
@@ -123,6 +126,29 @@ public class CapabilityPolling {
                     (ProvisioningManager.KEY_EAB_PROVISIONING_STATUS == item)) {
                 enqueueProvisionStateChanged();
             }
+        }
+    };
+
+    private RcsUceAdapter.PublishStateCallback mPublishStateCallback =
+            new RcsUceAdapter.PublishStateCallback() {
+        private static final String PERSIST_SERVICE_NAME =
+                "com.android.service.ims.presence.PersistService";
+        private static final String PERSIST_SERVICE_PACKAGE = "com.android.service.ims.presence";
+
+        @Override
+        public void onChanged(int publishState) {
+            logger.info("publish state changed: " + publishState);
+            Intent intent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
+            intent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
+            mContext.sendStickyBroadcast(intent);
+            launchPersistService(intent);
+        }
+
+        private void launchPersistService(Intent intent) {
+            ComponentName component = new ComponentName(PERSIST_SERVICE_PACKAGE,
+                    PERSIST_SERVICE_NAME);
+            intent.setComponent(component);
+            mContext.startService(intent);
         }
     };
 
@@ -234,6 +260,7 @@ public class CapabilityPolling {
         cancelDiscoveryAlarm();
         clearPollingTasks();
         mContext.unregisterReceiver(mReceiver);
+        unregisterPublishStateChangedCallback();
         mDiscoveryThread.quit();
 
         if (SubscriptionManager.isValidSubscriptionId(mDefaultSubId)) {
@@ -251,6 +278,29 @@ public class CapabilityPolling {
         intentFilter.addAction(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
         intentFilter.addAction(SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED);
         mContext.registerReceiver(mReceiver, intentFilter);
+    }
+
+    private void registerPublishStateChangedCallback() {
+        try {
+            ImsManager imsManager =
+                    (ImsManager) mContext.getSystemService(Context.TELEPHONY_IMS_SERVICE);
+            RcsUceAdapter uceAdapter = imsManager.getImsRcsManager(mDefaultSubId).getUceAdapter();
+            uceAdapter.registerPublishStateCallback(mContext.getMainExecutor(),
+                    mPublishStateCallback);
+        } catch (Exception ex) {
+            logger.warn("register publish state callback failed, exception: " + ex);
+        }
+    }
+
+    private void unregisterPublishStateChangedCallback() {
+        try {
+            ImsManager imsManager =
+                    (ImsManager) mContext.getSystemService(Context.TELEPHONY_IMS_SERVICE);
+            RcsUceAdapter uceAdapter = imsManager.getImsRcsManager(mDefaultSubId).getUceAdapter();
+            uceAdapter.unregisterPublishStateCallback(mPublishStateCallback);
+        } catch (Exception ex) {
+            logger.warn("unregister publish state callback failed, exception: " + ex);
+        }
     }
 
     private boolean isPollingReady() {
@@ -767,6 +817,8 @@ public class CapabilityPolling {
         if (SubscriptionManager.isValidSubscriptionId(mDefaultSubId)) {
             ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(mDefaultSubId);
             pm.unregisterProvisioningChangedCallback(mProvisioningManagerCallback);
+
+            unregisterPublishStateChangedCallback();
         }
         // register new default and clear old cached values in EAB only if we are changing the
         // default sub ID.
@@ -783,6 +835,7 @@ public class CapabilityPolling {
         enqueueSettingsChanged();
         // load settings for new default.
         enqueueProvisionStateChanged();
+        registerPublishStateChangedCallback();
     }
 
     public void tryProvisioningManagerRegistration() {
