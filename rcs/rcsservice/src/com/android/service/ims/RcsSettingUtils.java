@@ -277,6 +277,9 @@ public class RcsSettingUtils {
     }
 
     public static boolean isVoLteSupported(int subId) {
+        if (!SubscriptionManager.isValidSubscriptionId(subId)) {
+            return false;
+        }
         LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
         try {
             ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
@@ -296,6 +299,9 @@ public class RcsSettingUtils {
     }
 
     public static boolean isVoWiFiSupported(int subId) {
+        if (!SubscriptionManager.isValidSubscriptionId(subId)) {
+            return false;
+        }
         LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
         try {
             ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
@@ -315,6 +321,9 @@ public class RcsSettingUtils {
     }
 
     public static boolean isVtSupported(int subId) {
+        if (!SubscriptionManager.isValidSubscriptionId(subId)) {
+            return false;
+        }
         LinkedBlockingQueue<Boolean> resultQueue = new LinkedBlockingQueue<>(1);
         try {
             ImsMmTelManager mmTelManager = ImsMmTelManager.createForSubscriptionId(subId);
