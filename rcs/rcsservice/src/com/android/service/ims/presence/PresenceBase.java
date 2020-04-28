@@ -157,9 +157,10 @@ public abstract class PresenceBase{
         mContext.sendBroadcast(intent);
     }
 
-    protected boolean isInConfigList(int errorNo, String phrase, String[] errorArray) {
+    protected boolean isInConfigList(int errorNo, String phrase, int configId) {
         String inErrorString = ("" + errorNo).trim();
 
+        String[] errorArray = mContext.getResources().getStringArray(configId);
         logger.debug("errorArray length=" + errorArray.length + " errorArray=" + errorArray);
         for (String errorStr : errorArray) {
             if (errorStr != null && errorStr.startsWith(inErrorString)) {

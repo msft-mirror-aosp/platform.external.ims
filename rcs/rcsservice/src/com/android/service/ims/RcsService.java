@@ -60,8 +60,6 @@ import com.android.internal.telephony.TelephonyIntents;
 import com.android.service.ims.presence.PresencePublication;
 import com.android.service.ims.presence.PresenceSubscriber;
 
-import com.android.service.ims.R;
-
 public class RcsService extends Service{
     /**
      * The logger
@@ -82,18 +80,10 @@ public class RcsService extends Service{
 
         mRcsStackAdaptor = RcsStackAdaptor.getInstance(this);
 
-        mPublication = new PresencePublication(mRcsStackAdaptor, this,
-                getResources().getStringArray(
-                        R.array.config_volte_provision_error_on_publish_response),
-                getResources().getStringArray(
-                        R.array.config_rcs_provision_error_on_publish_response));
+        mPublication = new PresencePublication(mRcsStackAdaptor, this);
         mRcsStackAdaptor.getListener().setPresencePublication(mPublication);
 
-        mSubscriber = new PresenceSubscriber(mRcsStackAdaptor, this,
-                getResources().getStringArray(
-                        R.array.config_volte_provision_error_on_subscribe_response),
-                getResources().getStringArray(
-                        R.array.config_rcs_provision_error_on_subscribe_response));
+        mSubscriber = new PresenceSubscriber(mRcsStackAdaptor, this);
         mRcsStackAdaptor.getListener().setPresenceSubscriber(mSubscriber);
         mPublication.setSubscriber(mSubscriber);
 

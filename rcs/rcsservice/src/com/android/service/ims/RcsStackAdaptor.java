@@ -65,6 +65,7 @@ import com.android.ims.RcsPresence.PublishState;
 import com.android.ims.internal.Logger;
 import com.android.ims.internal.ContactNumberUtils;
 import com.android.service.ims.presence.PresencePublication;
+import com.android.service.ims.R;
 
 import com.android.ims.internal.uce.presence.IPresenceService;
 import com.android.ims.internal.uce.presence.PresCapInfo;
@@ -520,6 +521,7 @@ public class RcsStackAdaptor{
     }
 
     private PendingIntent mRetryAlarmIntent = null;
+    public static final String ACTION_RETRY_ALARM = "com.android.service.ims.presence.retry";
     private AlarmManager mAlarmManager = null;
     private BroadcastReceiver mRcsServiceReceiver = null;
 
@@ -643,7 +645,7 @@ public class RcsStackAdaptor{
 
             mIsIniting = true;
 
-            Intent intent = new Intent(AlarmBroadcastReceiver.ACTION_RETRY_ALARM);
+            Intent intent = new Intent(ACTION_RETRY_ALARM);
             intent.putExtra("times", times);
             intent.setClass(mContext, AlarmBroadcastReceiver.class);
             mRetryAlarmIntent = PendingIntent.getBroadcast(mContext, 0, intent,

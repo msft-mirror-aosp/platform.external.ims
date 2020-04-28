@@ -76,6 +76,8 @@ import com.android.ims.internal.uce.presence.PresCmdStatus;
 
 import com.android.service.ims.RcsStackAdaptor;
 
+import com.android.service.ims.R;
+
 public class PresencePublication extends PresenceBase {
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
@@ -140,8 +142,6 @@ public class PresencePublication extends PresenceBase {
     private boolean mImsRegistered = false;
     private boolean mVtEnabled = false;
     private boolean mDataEnabled = false;
-    private final String[] mConfigVolteProvisionErrorOnPublishResponse;
-    private final String[] mConfigRcsProvisionErrorOnPublishResponse;
 
     public class PublishType{
         public static final int PRES_PUBLISH_TRIGGER_DATA_CHANGED = 0;
@@ -159,15 +159,11 @@ public class PresencePublication extends PresenceBase {
      * @param rcsStackAdaptor
      * @param context
      */
-    public PresencePublication(RcsStackAdaptor rcsStackAdaptor, Context context,
-            String[] configVolteProvisionErrorOnPublishResponse,
-            String[] configRcsProvisionErrorOnPublishResponse) {
+    public PresencePublication(RcsStackAdaptor rcsStackAdaptor, Context context) {
         super();
         logger.debug("PresencePublication constrcuct");
         this.mRcsStackAdaptor = rcsStackAdaptor;
         this.mContext = context;
-        mConfigVolteProvisionErrorOnPublishResponse = configVolteProvisionErrorOnPublishResponse;
-        mConfigRcsProvisionErrorOnPublishResponse = configRcsProvisionErrorOnPublishResponse;
 
         mVtEnabled = getImsManager().isVtEnabledByUser();
 
@@ -1007,7 +1003,7 @@ public class PresencePublication extends PresenceBase {
         int sipCode = pSipResponse.getSipResponseCode();
 
         if(isInConfigList(sipCode, pSipResponse.getReasonPhrase(),
-                mConfigVolteProvisionErrorOnPublishResponse)) {
+                R.array.config_volte_provision_error_on_publish_response)) {
             logger.print("volte provision error. sipCode=" + sipCode + " phrase=" +
                     pSipResponse.getReasonPhrase());
             setPublishState(PublishState.PUBLISH_STATE_VOLTE_PROVISION_ERROR);
@@ -1019,7 +1015,7 @@ public class PresencePublication extends PresenceBase {
         }
 
         if(isInConfigList(sipCode, pSipResponse.getReasonPhrase(),
-                mConfigRcsProvisionErrorOnPublishResponse)) {
+                R.array.config_rcs_provision_error_on_publish_response)) {
             logger.print("rcs provision error.sipCode=" + sipCode + " phrase=" +
                     pSipResponse.getReasonPhrase());
             setPublishState(PublishState.PUBLISH_STATE_RCS_PROVISION_ERROR);
