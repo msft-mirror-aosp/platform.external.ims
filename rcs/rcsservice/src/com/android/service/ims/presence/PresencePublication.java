@@ -65,6 +65,10 @@ public class PresencePublication extends PresenceBase {
 
     private static final int TIMEOUT_CHECK_SUBSCRIPTION_READY_MS = 5000;
 
+    private static final String SIP_SCHEME = "sip";
+    private static final String TEL_SCHEME = "tel";
+    private static final String DOMAIN_SEPARATOR = "@";
+
     boolean mMovedToIWLAN = false;
     boolean mMovedToLTE = false;
     boolean mVoPSEnabled = false;
@@ -896,10 +900,14 @@ public class PresencePublication extends PresenceBase {
             logger.error("TelephonyManager not available.");
             return;
         }
-        Uri contactUri = Uri.fromParts(PhoneAccount.SCHEME_TEL, teleMgr.getLine1Number(), null);
+        Uri myUri = getUriForPublication();
+        if (myUri == null) {
+            logger.error("doPublish, myUri is null");
+            return;
+        }
 
         RcsContactUceCapability.Builder presenceInfoBuilder =
-                new RcsContactUceCapability.Builder(contactUri);
+                new RcsContactUceCapability.Builder(myUri);
         if (publishRequest.getVolteCapable()) {
             presenceInfoBuilder.add(RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL);
         }
@@ -912,15 +920,11 @@ public class PresencePublication extends PresenceBase {
             mPublishingRequest.setTimestamp(System.currentTimeMillis());
         }
 
-        String myUri = getUriForPublication();
-        if (myUri == null) {
-            logger.error("doPublish, myUri is null");
-        }
         String myNumber = getNumberFromUri(myUri);
         int taskId = TaskManager.getDefault().addPublishTask(myNumber);
         logger.print("doPublish, uri=" + myUri + ", myNumber=" + myNumber + ", taskId=" + taskId);
-
-        int ret = presencePublisher.requestPublication(presenceInfoBuilder.build(), myUri, taskId);
+        int ret = presencePublisher.requestPublication(presenceInfoBuilder.build(),
+                myUri.toString(), taskId);
         if (ret != ResultCode.SUCCESS) {
             logger.print("doPublish, task=" + taskId + " failed with code=" + ret);
             TaskManager.getDefault().removeTask(taskId);
@@ -929,18 +933,19 @@ public class PresencePublication extends PresenceBase {
         mHasCachedTrigger = (ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE);
     }
 
-    private String getNumberFromUri(String uriString) {
-        String number = Uri.parse(uriString).getSchemeSpecificPart();
+    private String getNumberFromUri(Uri uri) {
+        if (uri == null) return null;
+        String number = uri.getSchemeSpecificPart();
         String[] numberParts = number.split("[@;:]");
 
         if (numberParts.length == 0) {
-            logger.error("getNumberFromUri: invalid uri=" + uriString);
+            logger.error("getNumberFromUri: invalid uri=" + uri);
             return null;
         }
         return numberParts[0];
     }
 
-    private String getUriForPublication() {
+    private Uri getUriForPublication() {
         TelephonyManager teleMgr = (TelephonyManager) mContext.getSystemService(
                 Context.TELEPHONY_SERVICE);
         if (teleMgr == null) {
@@ -949,37 +954,41 @@ public class PresencePublication extends PresenceBase {
         }
         teleMgr = teleMgr.createForSubscriptionId(mAssociatedSubscription);
 
-        String myNumUri = null;
+        Uri myNumUri = null;
         String myDomain = teleMgr.getIsimDomain();
         logger.debug("myDomain=" + myDomain);
-        if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
+        if (!TextUtils.isEmpty(myDomain)) {
             String[] impu = teleMgr.getIsimImpu();
-
-            if(impu !=null){
-                for(int i=0; i<impu.length; i++){
+            if (impu != null) {
+                for (int i = 0; i < impu.length; i++) {
                     logger.debug("impu[" + i + "]=" + impu[i]);
-                    if(impu[i] != null && impu[i].startsWith("sip:") &&
-                            impu[i].endsWith(myDomain)){
-                        myNumUri = impu[i];
+                    if (!TextUtils.isEmpty(impu[i])) {
+                        Uri impuUri = Uri.parse(impu[i]);
+                        if (SIP_SCHEME.equals(impuUri.getScheme()) &&
+                                impuUri.getSchemeSpecificPart().endsWith(myDomain)) {
+                            myNumUri = impuUri;
+                            logger.debug("impu[" + i + "] -> uri:" + myNumUri);
+                        }
                         break;
                     }
                 }
             }
         }
-        String myNumber = null;
-        if (myNumUri != null) {
-            myNumber = Uri.parse(myNumUri).getSchemeSpecificPart();
+
+        // Try to parse URI, if it works, we are good!
+        String myNumber = myNumUri == null ? null : myNumUri.getSchemeSpecificPart();
+        if (!TextUtils.isEmpty(myNumber)) {
+            return myNumUri;
         }
 
-        if (myNumber == null) {
-            myNumber = ContactNumberUtils.getDefault().format(teleMgr.getLine1Number());
-            if (myDomain != null && !TextUtils.isEmpty(myDomain)) {
-                myNumUri = "sip:" + myNumber + "@" + myDomain;
-            } else {
-                myNumUri = "tel:" + myNumber;
-            }
+        // Fall back to trying to use the line 1 number to construct URI
+        myNumber = ContactNumberUtils.getDefault().format(teleMgr.getLine1Number());
+        if (myNumber == null) return null;
+        if (!TextUtils.isEmpty(myDomain)) {
+            return Uri.fromParts(SIP_SCHEME, myNumber + DOMAIN_SEPARATOR + myDomain, null);
+        } else {
+            return Uri.fromParts(TEL_SCHEME, myNumber, null);
         }
-        return myNumUri;
     }
 
     private PendingIntent mRetryAlarmIntent = null;
