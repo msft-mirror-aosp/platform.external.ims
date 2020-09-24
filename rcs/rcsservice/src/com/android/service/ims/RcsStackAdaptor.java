@@ -253,14 +253,16 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     public void updatePublisherState(@PresenceBase.PresencePublishState int publishState) {
         synchronized (mSyncObj) {
             logger.print("mPublishingState=" + mPublishingState + " publishState=" + publishState);
+            if (mPublishingState != publishState ) {
+                Intent publishIntent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
+                publishIntent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
+                // Start PersistService and broadcast to other receivers that are listening
+                // dynamically.
+                mContext.sendStickyBroadcast(publishIntent);
+                launchPersistService(publishIntent);
+            }
             mPublishingState = publishState;
         }
-        Intent publishIntent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
-        publishIntent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
-        // Start PersistService and broadcast to other receivers that are listening
-        // dynamically.
-        mContext.sendStickyBroadcast(publishIntent);
-        launchPersistService(publishIntent);
     }
 
     @Override
