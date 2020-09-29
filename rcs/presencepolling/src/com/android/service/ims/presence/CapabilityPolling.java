@@ -86,6 +86,7 @@ public class CapabilityPolling {
     private int mPublished = -1;
     private int mProvisioned = -1;
     private int mDefaultSubId;
+    private boolean isInitializing = false;
 
     private HandlerThread mDiscoveryThread;
     private Handler mDiscoveryHandler;
@@ -805,13 +806,16 @@ public class CapabilityPolling {
     // Track the default subscription (the closest we can get to MSIM).
     // call from main thread only.
     public void handleDefaultSubscriptionChanged(int newDefaultSubId) {
-        logger.print("registerImsCallbacksAndSetAssociatedSubscription: new default= "
+        logger.print("handleDefaultSubscriptionChanged: new default= "
                 + newDefaultSubId);
+
         if (!SubscriptionManager.isValidSubscriptionId(newDefaultSubId)) {
             return;
         }
-        if (mDefaultSubId == newDefaultSubId) {
+        if (isInitializing && (mDefaultSubId == newDefaultSubId)) {
             return;
+        } else {
+            isInitializing = true;
         }
         // unregister old default first
         if (SubscriptionManager.isValidSubscriptionId(mDefaultSubId)) {
