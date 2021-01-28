@@ -420,7 +420,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     }
 
     private boolean isVolteSupported(RcsContactUceCapability capabilities) {
-        RcsContactPresenceTuple presenceTuple = capabilities.getPresenceTuple(
+        RcsContactPresenceTuple presenceTuple = capabilities.getCapabilityTuple(
                 RcsContactPresenceTuple.SERVICE_ID_MMTEL);
         if (presenceTuple != null) {
             ServiceCapabilities serviceCaps = presenceTuple.getServiceCapabilities();
@@ -432,7 +432,7 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
     }
 
     private boolean isVtSupported(RcsContactUceCapability capabilities) {
-        RcsContactPresenceTuple presenceTuple = capabilities.getPresenceTuple(
+        RcsContactPresenceTuple presenceTuple = capabilities.getCapabilityTuple(
                 RcsContactPresenceTuple.SERVICE_ID_MMTEL);
         if (presenceTuple != null) {
             ServiceCapabilities serviceCaps = presenceTuple.getServiceCapabilities();
