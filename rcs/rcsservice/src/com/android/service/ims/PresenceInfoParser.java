@@ -296,7 +296,7 @@ public class PresenceInfoParser{
         RcsContactPresenceTuple.Builder tupleBuilder = new RcsContactPresenceTuple.Builder(
                 RcsContactPresenceTuple.TUPLE_BASIC_STATUS_OPEN,
                 RcsContactPresenceTuple.SERVICE_ID_MMTEL, "1.0");
-        tupleBuilder.addContactUri(contactUri).addServiceCapabilities(servCapsBuilder.build());
+        tupleBuilder.setContactUri(contactUri).setServiceCapabilities(servCapsBuilder.build());
 
         PresenceBuilder presenceBuilder = new PresenceBuilder(contactUri,
                 RcsContactUceCapability.SOURCE_TYPE_CACHED,
@@ -309,7 +309,7 @@ public class PresenceInfoParser{
     public static RcsPresenceInfo getRcsPresenceInfo(RcsContactUceCapability capability) {
         int volteCapable = ServiceState.OFFLINE;
         int vtCapable = ServiceState.OFFLINE;
-        RcsContactPresenceTuple presenceTuple = capability.getPresenceTuple(
+        RcsContactPresenceTuple presenceTuple = capability.getCapabilityTuple(
                 RcsContactPresenceTuple.SERVICE_ID_MMTEL);
         if (presenceTuple != null) {
             ServiceCapabilities serviceCaps = presenceTuple.getServiceCapabilities();
