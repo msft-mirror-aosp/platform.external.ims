@@ -44,6 +44,8 @@ import android.os.SystemClock;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.ims.RcsContactPresenceTuple;
+import android.telephony.ims.RcsContactPresenceTuple.ServiceCapabilities;
 import android.telephony.ims.RcsContactUceCapability;
 
 import com.android.ims.ResultCode;
@@ -376,10 +378,8 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
             pMyCapInfo.setContactUri(myUri);
 
             CapInfo capInfo = new CapInfo();
-            capInfo.setIpVoiceSupported(capabilities.isCapable(
-                    RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL));
-            capInfo.setIpVideoSupported(capabilities.isCapable(
-                    RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL));
+            capInfo.setIpVoiceSupported(isVolteSupported(capabilities));
+            capInfo.setIpVideoSupported(isVtSupported(capabilities));
             capInfo.setCdViaPresenceSupported(true);
 
             capInfo.setFtSupported(false); // TODO: support FT
@@ -415,6 +415,30 @@ public class RcsStackAdaptor implements PresencePublisher, SubscribePublisher {
         }
 
         return  ResultCode.SUCCESS;
+    }
+
+    private boolean isVolteSupported(RcsContactUceCapability capabilities) {
+        RcsContactPresenceTuple presenceTuple = capabilities.getCapabilityTuple(
+                RcsContactPresenceTuple.SERVICE_ID_MMTEL);
+        if (presenceTuple != null) {
+            ServiceCapabilities serviceCaps = presenceTuple.getServiceCapabilities();
+            if (serviceCaps != null && serviceCaps.isAudioCapable()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isVtSupported(RcsContactUceCapability capabilities) {
+        RcsContactPresenceTuple presenceTuple = capabilities.getCapabilityTuple(
+                RcsContactPresenceTuple.SERVICE_ID_MMTEL);
+        if (presenceTuple != null) {
+            ServiceCapabilities serviceCaps = presenceTuple.getServiceCapabilities();
+            if (serviceCaps != null && serviceCaps.isVideoCapable()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void launchPersistService(Intent intent) {

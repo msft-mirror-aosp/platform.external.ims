@@ -65,6 +65,10 @@ public class CapabilityPolling {
     private Logger logger = Logger.getLogger(this.getClass().getName());
     private final Context mContext;
 
+    private static final String PERSIST_SERVICE_NAME =
+        "com.android.service.ims.presence.PersistService";
+    private static final String PERSIST_SERVICE_PACKAGE = "com.android.service.ims.presence";
+
     public static final String ACTION_PERIODICAL_DISCOVERY_ALARM =
             "com.android.service.ims.presence.periodical_capability_discovery";
     private PendingIntent mDiscoveryAlarmIntent = null;
@@ -129,28 +133,24 @@ public class CapabilityPolling {
         }
     };
 
-    private RcsUceAdapter.PublishStateCallback mPublishStateCallback =
-            new RcsUceAdapter.PublishStateCallback() {
-        private static final String PERSIST_SERVICE_NAME =
-                "com.android.service.ims.presence.PersistService";
-        private static final String PERSIST_SERVICE_PACKAGE = "com.android.service.ims.presence";
-
+    private RcsUceAdapter.OnPublishStateChangedListener mPublishStateCallback =
+            new RcsUceAdapter.OnPublishStateChangedListener() {
         @Override
-        public void onChanged(int publishState) {
+        public void onPublishStateChange(int publishState) {
             logger.info("publish state changed: " + publishState);
             Intent intent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
             intent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
             mContext.sendStickyBroadcast(intent);
             launchPersistService(intent);
         }
-
-        private void launchPersistService(Intent intent) {
-            ComponentName component = new ComponentName(PERSIST_SERVICE_PACKAGE,
-                    PERSIST_SERVICE_NAME);
-            intent.setComponent(component);
-            mContext.startService(intent);
-        }
     };
+
+    private void launchPersistService(Intent intent) {
+        ComponentName component = new ComponentName(PERSIST_SERVICE_PACKAGE,
+            PERSIST_SERVICE_NAME);
+        intent.setComponent(component);
+        mContext.startService(intent);
+    }
 
     private Runnable mRegisterCallbackRunnable = this::tryProvisioningManagerRegistration;
 
@@ -285,7 +285,7 @@ public class CapabilityPolling {
             ImsManager imsManager =
                     (ImsManager) mContext.getSystemService(Context.TELEPHONY_IMS_SERVICE);
             RcsUceAdapter uceAdapter = imsManager.getImsRcsManager(mDefaultSubId).getUceAdapter();
-            uceAdapter.registerPublishStateCallback(mContext.getMainExecutor(),
+            uceAdapter.addOnPublishStateChangedListener(mContext.getMainExecutor(),
                     mPublishStateCallback);
         } catch (Exception ex) {
             logger.warn("register publish state callback failed, exception: " + ex);
@@ -297,7 +297,7 @@ public class CapabilityPolling {
             ImsManager imsManager =
                     (ImsManager) mContext.getSystemService(Context.TELEPHONY_IMS_SERVICE);
             RcsUceAdapter uceAdapter = imsManager.getImsRcsManager(mDefaultSubId).getUceAdapter();
-            uceAdapter.unregisterPublishStateCallback(mPublishStateCallback);
+            uceAdapter.removeOnPublishStateChangedListener(mPublishStateCallback);
         } catch (Exception ex) {
             logger.warn("unregister publish state callback failed, exception: " + ex);
         }
