@@ -941,8 +941,8 @@ public class PresencePublication extends PresenceBase {
         RcsContactPresenceTuple.Builder tupleBuilder = new RcsContactPresenceTuple.Builder(
                 RcsContactPresenceTuple.TUPLE_BASIC_STATUS_OPEN,
                 RcsContactPresenceTuple.SERVICE_ID_MMTEL, "1.0");
-        tupleBuilder.addContactUri(contact)
-                .addServiceCapabilities(servCapsBuilder.build());
+        tupleBuilder.setContactUri(contact)
+                .setServiceCapabilities(servCapsBuilder.build());
 
         PresenceBuilder presenceBuilder = new PresenceBuilder(contact,
                 RcsContactUceCapability.SOURCE_TYPE_CACHED,
