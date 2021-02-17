@@ -28,6 +28,23 @@
 // Build the application : Presence.apk
 //#########################################################################
 
+package {
+    default_applicable_licenses: ["external_ims_rcs_rcsservice_license"],
+}
+
+// Added automatically by a large-scale-change
+// See: http://go/android-license-faq
+license {
+    name: "external_ims_rcs_rcsservice_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-BSD",
+    ],
+    license_text: [
+        "LICENSE",
+    ],
+}
+
 java_library {
     name: "ucepresencelib",
     // We only want this to be used as a static import.
