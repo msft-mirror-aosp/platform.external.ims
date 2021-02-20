@@ -61,7 +61,6 @@ java_library {
 android_app {
     // This is the target being built. (Name of APK)
     name: "RcsService",
-    platform_apis: true,
     // Only compile source java files in this apk.
     srcs: [
         "src/com/android/service/ims/AlarmBroadcastReceiver.java",
@@ -79,4 +78,6 @@ android_app {
         "com.android.ims.rcsmanager"
     ],
     certificate: "platform",
+    system_ext_specific: true,
+    platform_apis: true,
 }

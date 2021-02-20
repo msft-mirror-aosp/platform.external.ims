@@ -58,8 +58,9 @@ java_defaults {
     name: "presence_polling_defaults",
     srcs: ["src/**/*.java"],
     static_libs: ["com.android.ims.rcsmanager"],
-    platform_apis: true,
     certificate: "platform",
+    system_ext_specific: true,
+    platform_apis: true,
     optimize: {
         proguard_flags_files: ["proguard.flags"],
     },
