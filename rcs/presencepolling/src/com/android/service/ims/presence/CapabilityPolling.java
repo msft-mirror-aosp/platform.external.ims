@@ -474,7 +474,7 @@ public class CapabilityPolling {
         intent.putExtra("pollingType", type);
 
         mDiscoveryAlarmIntent = PendingIntent.getBroadcast(mContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT);
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         mAlarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 SystemClock.elapsedRealtime() + msec, mDiscoveryAlarmIntent);
 
