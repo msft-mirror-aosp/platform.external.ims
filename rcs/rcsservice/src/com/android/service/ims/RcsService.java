@@ -218,7 +218,7 @@ public class RcsService extends Service {
         mRcsStackAdaptor.getListener().setPresenceSubscriber(mSubscriber);
         mPublication.setSubscriber(mSubscriber);
 
-        ConnectivityManager cm = ConnectivityManager.from(this);
+        final ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         if (cm != null) {
             boolean enabled = Settings.Global.getInt(getContentResolver(),
                     Settings.Global.MOBILE_DATA, 1) == 1;
