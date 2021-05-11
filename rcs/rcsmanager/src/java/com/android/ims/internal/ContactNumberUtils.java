@@ -134,9 +134,7 @@ public class ContactNumberUtils {
     public static int NUMBER_INVALID = 5;
 
     /**
-     * Check if it is a valid contact number for presence.
-     *
-     * Note: mContext must be set via setContext() before calling this method.
+     * Check if it is a valid contact number for presence
      *
      * @param phoneNumber read from contact db.
      * @return contact number error code.
@@ -163,16 +161,7 @@ public class ContactNumberUtils {
             return NUMBER_INVALID;
         }
 
-        boolean isEmergencyNumber;
-        if (mContext == null) {
-            Log.e(TAG, "context is unexpectedly null to provide emergency identification service");
-            isEmergencyNumber = false;
-        } else {
-            TelephonyManager tm = mContext.getSystemService(TelephonyManager.class);
-            isEmergencyNumber = tm.isEmergencyNumber(number);
-        }
-
-        if (isEmergencyNumber) {
+        if (PhoneNumberUtils.isEmergencyNumber(number)) {
             return NUMBER_EMERGENCY;
         // TODO: To handle short code
         //} else if ((mContext != null) && PhoneNumberUtils.isN11Number(mContext, number)) {
