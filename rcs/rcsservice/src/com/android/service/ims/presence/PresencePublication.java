@@ -1033,7 +1033,7 @@ public class PresencePublication extends PresenceBase {
         Intent intent = new Intent(ACTION_RETRY_PUBLISH_ALARM);
         intent.setPackage(mContext.getPackageName());
         mRetryAlarmIntent = PendingIntent.getBroadcast(mContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT);
+                PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
 
         if(mAlarmManager == null) {
             mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
