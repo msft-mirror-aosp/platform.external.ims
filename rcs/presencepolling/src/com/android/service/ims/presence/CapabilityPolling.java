@@ -31,7 +31,6 @@ package com.android.service.ims.presence;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -45,9 +44,7 @@ import android.telephony.PhoneNumberUtils;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.ImsException;
-import android.telephony.ims.ImsManager;
 import android.telephony.ims.ProvisioningManager;
-import android.telephony.ims.RcsUceAdapter;
 import android.text.format.TimeMigrationUtils;
 import android.text.TextUtils;
 
@@ -64,10 +61,6 @@ import java.util.List;
 public class CapabilityPolling {
     private Logger logger = Logger.getLogger(this.getClass().getName());
     private final Context mContext;
-
-    private static final String PERSIST_SERVICE_NAME =
-        "com.android.service.ims.presence.PersistService";
-    private static final String PERSIST_SERVICE_PACKAGE = "com.android.service.ims.presence";
 
     public static final String ACTION_PERIODICAL_DISCOVERY_ALARM =
             "com.android.service.ims.presence.periodical_capability_discovery";
@@ -90,7 +83,6 @@ public class CapabilityPolling {
     private int mPublished = -1;
     private int mProvisioned = -1;
     private int mDefaultSubId;
-    private boolean isInitializing = false;
 
     private HandlerThread mDiscoveryThread;
     private Handler mDiscoveryHandler;
@@ -133,25 +125,6 @@ public class CapabilityPolling {
             }
         }
     };
-
-    private RcsUceAdapter.OnPublishStateChangedListener mPublishStateCallback =
-            new RcsUceAdapter.OnPublishStateChangedListener() {
-        @Override
-        public void onPublishStateChange(int publishState) {
-            logger.info("publish state changed: " + publishState);
-            Intent intent = new Intent(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
-            intent.putExtra(RcsPresence.EXTRA_PUBLISH_STATE, publishState);
-            mContext.sendStickyBroadcast(intent);
-            launchPersistService(intent);
-        }
-    };
-
-    private void launchPersistService(Intent intent) {
-        ComponentName component = new ComponentName(PERSIST_SERVICE_PACKAGE,
-            PERSIST_SERVICE_NAME);
-        intent.setComponent(component);
-        mContext.startService(intent);
-    }
 
     private Runnable mRegisterCallbackRunnable = this::tryProvisioningManagerRegistration;
 
@@ -261,7 +234,6 @@ public class CapabilityPolling {
         cancelDiscoveryAlarm();
         clearPollingTasks();
         mContext.unregisterReceiver(mReceiver);
-        unregisterPublishStateChangedCallback();
         mDiscoveryThread.quit();
 
         if (SubscriptionManager.isValidSubscriptionId(mDefaultSubId)) {
@@ -279,29 +251,6 @@ public class CapabilityPolling {
         intentFilter.addAction(RcsPresence.ACTION_PUBLISH_STATE_CHANGED);
         intentFilter.addAction(SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED);
         mContext.registerReceiver(mReceiver, intentFilter);
-    }
-
-    private void registerPublishStateChangedCallback() {
-        try {
-            ImsManager imsManager =
-                    (ImsManager) mContext.getSystemService(Context.TELEPHONY_IMS_SERVICE);
-            RcsUceAdapter uceAdapter = imsManager.getImsRcsManager(mDefaultSubId).getUceAdapter();
-            uceAdapter.addOnPublishStateChangedListener(mContext.getMainExecutor(),
-                    mPublishStateCallback);
-        } catch (Exception ex) {
-            logger.warn("register publish state callback failed, exception: " + ex);
-        }
-    }
-
-    private void unregisterPublishStateChangedCallback() {
-        try {
-            ImsManager imsManager =
-                    (ImsManager) mContext.getSystemService(Context.TELEPHONY_IMS_SERVICE);
-            RcsUceAdapter uceAdapter = imsManager.getImsRcsManager(mDefaultSubId).getUceAdapter();
-            uceAdapter.removeOnPublishStateChangedListener(mPublishStateCallback);
-        } catch (Exception ex) {
-            logger.warn("unregister publish state callback failed, exception: " + ex);
-        }
     }
 
     private boolean isPollingReady() {
@@ -474,7 +423,7 @@ public class CapabilityPolling {
         intent.putExtra("pollingType", type);
 
         mDiscoveryAlarmIntent = PendingIntent.getBroadcast(mContext, 0, intent,
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                PendingIntent.FLAG_UPDATE_CURRENT);
         mAlarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 SystemClock.elapsedRealtime() + msec, mDiscoveryAlarmIntent);
 
@@ -806,23 +755,18 @@ public class CapabilityPolling {
     // Track the default subscription (the closest we can get to MSIM).
     // call from main thread only.
     public void handleDefaultSubscriptionChanged(int newDefaultSubId) {
-        logger.print("handleDefaultSubscriptionChanged: new default= "
+        logger.print("registerImsCallbacksAndSetAssociatedSubscription: new default= "
                 + newDefaultSubId);
-
         if (!SubscriptionManager.isValidSubscriptionId(newDefaultSubId)) {
             return;
         }
-        if (isInitializing && (mDefaultSubId == newDefaultSubId)) {
+        if (mDefaultSubId == newDefaultSubId) {
             return;
-        } else {
-            isInitializing = true;
         }
         // unregister old default first
         if (SubscriptionManager.isValidSubscriptionId(mDefaultSubId)) {
             ProvisioningManager pm = ProvisioningManager.createForSubscriptionId(mDefaultSubId);
             pm.unregisterProvisioningChangedCallback(mProvisioningManagerCallback);
-
-            unregisterPublishStateChangedCallback();
         }
         // register new default and clear old cached values in EAB only if we are changing the
         // default sub ID.
@@ -839,7 +783,6 @@ public class CapabilityPolling {
         enqueueSettingsChanged();
         // load settings for new default.
         enqueueProvisionStateChanged();
-        registerPublishStateChangedCallback();
     }
 
     public void tryProvisioningManagerRegistration() {

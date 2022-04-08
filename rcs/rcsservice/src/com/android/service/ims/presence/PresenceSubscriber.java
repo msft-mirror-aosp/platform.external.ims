@@ -29,11 +29,9 @@
 package com.android.service.ims.presence;
 
 import android.content.Context;
-import android.net.Uri;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.RcsContactUceCapability;
-import android.telephony.ims.RcsContactUceCapability.PresenceBuilder;
 import android.text.TextUtils;
 
 import com.android.ims.ResultCode;
@@ -451,8 +449,8 @@ public class PresenceSubscriber extends PresenceBase {
                 }
                 logger.debug("onSipResponse: contact= " + contacts[i] + ", not found.");
                 // Build contacts with no capabilities.
-                contactCapabilities.add(buildContactWithNoCapabilities(
-                        PresenceUtils.convertContactNumber(contacts[i])));
+                contactCapabilities.add(new RcsContactUceCapability.Builder(
+                        PresenceUtils.convertContactNumber(contacts[i])).build());
             }
             handleCapabilityUpdate(task, contactCapabilities, true);
 
@@ -461,13 +459,6 @@ public class PresenceSubscriber extends PresenceBase {
         }
 
         handleCallback(task, errorCode, false);
-    }
-
-    private RcsContactUceCapability buildContactWithNoCapabilities(Uri contactUri) {
-        PresenceBuilder presenceBuilder = new PresenceBuilder(contactUri,
-                RcsContactUceCapability.SOURCE_TYPE_CACHED,
-                RcsContactUceCapability.REQUEST_RESULT_FOUND);
-        return presenceBuilder.build();
     }
 
     private void handleCapabilityUpdate(Task task, List<RcsContactUceCapability> capabilities,
@@ -577,11 +568,8 @@ public class PresenceSubscriber extends PresenceBase {
                 continue;
             }
             // Add each contacts with no capabilities.
-            Uri uri = PresenceUtils.convertContactNumber(task.mContacts[i]);
-            PresenceBuilder presenceBuilder = new PresenceBuilder(uri,
-                    RcsContactUceCapability.SOURCE_TYPE_CACHED,
-                    RcsContactUceCapability.REQUEST_RESULT_FOUND);
-            presenceInfoList.add(presenceBuilder.build());
+            presenceInfoList.add(new RcsContactUceCapability.Builder(
+                    PresenceUtils.convertContactNumber(task.mContacts[i])).build());
         }
 
         if(presenceInfoList.size() > 0) {

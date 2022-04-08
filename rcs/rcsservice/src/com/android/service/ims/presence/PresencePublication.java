@@ -44,10 +44,7 @@ import android.telecom.TelecomManager;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-import android.telephony.ims.RcsContactPresenceTuple;
-import android.telephony.ims.RcsContactPresenceTuple.ServiceCapabilities;
 import android.telephony.ims.RcsContactUceCapability;
-import android.telephony.ims.RcsContactUceCapability.PresenceBuilder;
 import android.telephony.ims.feature.MmTelFeature;
 import android.text.TextUtils;
 
@@ -909,10 +906,14 @@ public class PresencePublication extends PresenceBase {
             return;
         }
 
-        boolean isVolteCapble = publishRequest.getVolteCapable();
-        boolean isVtCapable = publishRequest.getVtCapable();
-        RcsContactUceCapability presenceInfo =
-                getRcsContactUceCapability(myUri, isVolteCapble, isVtCapable);
+        RcsContactUceCapability.Builder presenceInfoBuilder =
+                new RcsContactUceCapability.Builder(myUri);
+        if (publishRequest.getVolteCapable()) {
+            presenceInfoBuilder.add(RcsContactUceCapability.CAPABILITY_IP_VOICE_CALL);
+        }
+        if (publishRequest.getVtCapable()) {
+            presenceInfoBuilder.add(RcsContactUceCapability.CAPABILITY_IP_VIDEO_CALL);
+        }
 
         synchronized(mSyncObj) {
             mPublishingRequest = publishRequest;
@@ -922,34 +923,14 @@ public class PresencePublication extends PresenceBase {
         String myNumber = getNumberFromUri(myUri);
         int taskId = TaskManager.getDefault().addPublishTask(myNumber);
         logger.print("doPublish, uri=" + myUri + ", myNumber=" + myNumber + ", taskId=" + taskId);
-        int ret = presencePublisher.requestPublication(presenceInfo, myUri.toString(), taskId);
+        int ret = presencePublisher.requestPublication(presenceInfoBuilder.build(),
+                myUri.toString(), taskId);
         if (ret != ResultCode.SUCCESS) {
             logger.print("doPublish, task=" + taskId + " failed with code=" + ret);
             TaskManager.getDefault().removeTask(taskId);
         }
         // cache the latest publication request if temporarily not available.
         mHasCachedTrigger = (ret == ResultCode.ERROR_SERVICE_NOT_AVAILABLE);
-    }
-
-    private RcsContactUceCapability getRcsContactUceCapability(Uri contact, boolean isVolteCapable,
-            boolean isVtCapable) {
-
-        ServiceCapabilities.Builder servCapsBuilder = new ServiceCapabilities.Builder(
-            isVolteCapable, isVtCapable);
-        servCapsBuilder.addSupportedDuplexMode(ServiceCapabilities.DUPLEX_MODE_FULL);
-
-        RcsContactPresenceTuple.Builder tupleBuilder = new RcsContactPresenceTuple.Builder(
-                RcsContactPresenceTuple.TUPLE_BASIC_STATUS_OPEN,
-                RcsContactPresenceTuple.SERVICE_ID_MMTEL, "1.0");
-        tupleBuilder.setContactUri(contact)
-                .setServiceCapabilities(servCapsBuilder.build());
-
-        PresenceBuilder presenceBuilder = new PresenceBuilder(contact,
-                RcsContactUceCapability.SOURCE_TYPE_CACHED,
-                RcsContactUceCapability.REQUEST_RESULT_FOUND);
-        presenceBuilder.addCapabilityTuple(tupleBuilder.build());
-
-        return presenceBuilder.build();
     }
 
     private String getNumberFromUri(Uri uri) {
@@ -1033,7 +1014,7 @@ public class PresencePublication extends PresenceBase {
         Intent intent = new Intent(ACTION_RETRY_PUBLISH_ALARM);
         intent.setPackage(mContext.getPackageName());
         mRetryAlarmIntent = PendingIntent.getBroadcast(mContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+                PendingIntent.FLAG_UPDATE_CURRENT);
 
         if(mAlarmManager == null) {
             mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
