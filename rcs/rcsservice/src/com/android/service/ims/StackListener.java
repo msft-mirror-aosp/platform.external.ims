@@ -508,8 +508,8 @@ public class StackListener extends Handler{
         public void capInfoReceived(String presentityURI, PresTupleInfo[] pTupleInfo)
                 throws RemoteException {
             logger.debug("ListenerHandler : CapInfoReceived");
-            if(presentityURI == null || presentityURI == null){
-                logger.error("presentityURI=null or presentityURI=null");
+            if(presentityURI == null) {
+                logger.error("presentityURI=null");
                 return;
             }
 
