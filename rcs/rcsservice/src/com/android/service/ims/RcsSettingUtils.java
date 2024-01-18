@@ -361,9 +361,8 @@ public class RcsSettingUtils {
     public static int getDefaultSubscriptionId(Context context) {
         SubscriptionManager sm = context.getSystemService(SubscriptionManager.class);
         if (sm == null) return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
-        if (Flags.workProfileApiSplit()) {
-            sm = sm.createForAllUserProfiles();
-        }
+        sm = sm.createForAllUserProfiles();
+
         List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
         if (infos == null || infos.isEmpty()) {
             // There are no active subscriptions right now.
