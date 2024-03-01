@@ -24,8 +24,8 @@ import static org.mockito.Mockito.verify;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
 import android.telephony.CarrierConfigManager;
-import android.test.suitebuilder.annotation.SmallTest;
 
+import androidx.test.filters.SmallTest;
 import androidx.test.runner.AndroidJUnit4;
 
 import org.junit.After;
