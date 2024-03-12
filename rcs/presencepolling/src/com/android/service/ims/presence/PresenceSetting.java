@@ -34,6 +34,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.ims.ProvisioningManager;
 
 import com.android.ims.internal.Logger;
+import com.android.internal.telephony.flags.Flags;
 
 import java.util.List;
 
@@ -245,6 +246,9 @@ public class PresenceSetting {
     public static int getDefaultSubscriptionId() {
         SubscriptionManager sm = sContext.getSystemService(SubscriptionManager.class);
         if (sm == null) return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+        if (Flags.workProfileApiSplit()) {
+            sm = sm.createForAllUserProfiles();
+        }
         List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
         if (infos == null || infos.isEmpty()) {
             // There are no active subscriptions right now.
