@@ -53,6 +53,7 @@
     <uses-permission android:name="android.permission.ACCESS_UCE_PRESENCE_SERVICE"/>
     <uses-permission android:name="com.android.ims.permission.PRESENCE_ACCESS"/>
     <uses-permission android:name="com.android.rcs.eab.permission.READ_WRITE_EAB"/>
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_PROFILES"/>
 
     <application android:name="RcsServiceApp"
          android:persistent="true"
